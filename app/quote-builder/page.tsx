@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { apiBase } from "../../lib/apiBase";
 import { mockQuote, Quote, QuoteItem } from "../../lib/mockQuote";
 
 function round2(n: number): number {
@@ -88,7 +89,7 @@ export default function QuoteBuilderPage() {
   const addCartProducts = async () => {
     const codes = mockCart.cartItems.map((i) => i.productCode).join(",");
     console.log(codes, 'codes')
-    const response = await fetch(`http://localhost:5000/quotes/cart-products?codes=${encodeURIComponent(codes)}`, {
+    const response = await fetch(`${apiBase}/quotes/cart-products?codes=${encodeURIComponent(codes)}`, {
       // method: "GET",
       // headers: { "Content-Type": "application/json" },
     });
