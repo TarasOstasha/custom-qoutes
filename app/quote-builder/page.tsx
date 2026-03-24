@@ -39,6 +39,10 @@ function recalc(items: QuoteItem[]) {
 
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(mockQuote);
+  const mockCart = {
+    cartId: "07387C5E1E344F7DB151AE80E9894EE7",
+    cartItems: [{ productCode: "ws54360", qty: 5 }],
+  };
 
   const totals = useMemo(() => recalc(quote.items), [quote.items]);
 
@@ -77,6 +81,42 @@ export default function QuoteBuilderPage() {
 
     setQuote((prev) => {
       const items = [...prev.items, newItem];
+      return { ...prev, ...recalc(items) };
+    });
+  };
+
+  const addCartProducts = async () => {
+    const codes = mockCart.cartItems.map((i) => i.productCode).join(",");
+    console.log(codes, 'codes')
+    const response = await fetch(`http://localhost:5000/quotes/cart-products?codes=${encodeURIComponent(codes)}`, {
+      // method: "GET",
+      // headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) return;
+
+    const data = (await response.json()) as { items?: QuoteItem[] };
+    const returnedItems = Array.isArray(data.items) ? data.items : [];
+    const qtyByCode = new Map(
+      mockCart.cartItems.map((i) => [i.productCode.toLowerCase(), Number(i.qty)] as const)
+    );
+    const now = new Date().toISOString();
+
+    const mappedItems = returnedItems.map((item, index) => {
+      const code = (item.sku ?? item.sourceProductId ?? "").toLowerCase();
+      const qty = qtyByCode.get(code) ?? item.qty;
+      return {
+        ...item,
+        id: `qi_cart_${Date.now()}_${index}`,
+        quoteId: quote.id,
+        qty,
+        sortOrder: quote.items.length + index + 1,
+        createdAt: now,
+        updatedAt: now,
+      } as QuoteItem;
+    });
+
+    setQuote((prev) => {
+      const items = [...prev.items, ...mappedItems];
       return { ...prev, ...recalc(items) };
     });
   };
@@ -212,6 +252,9 @@ export default function QuoteBuilderPage() {
           <div className="actions" style={{ marginTop: 12 }}>
             <button className="btn" onClick={addCustomItem}>
               Add Custom Item
+            </button>
+            <button className="btn" onClick={addCartProducts}>
+              Add Cart Products
             </button>
           </div>
         </div>

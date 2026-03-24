@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { Quote, QuoteItem, quotes } from "../mock/quotes";
+import { fetchCartProductsAsQuoteItems } from "../services/volusion";
 
 const router = Router();
 
@@ -44,8 +45,33 @@ router.get("/", (_req: Request, res: Response) => {
   res.json({ data: quotes });
 });
 
+router.get("/cart-products", async (req: Request, res: Response) => {
+  try {
+    const rawCodes = String(req.query.codes ?? "");
+    
+    const codes = rawCodes
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    
+    if (!codes.length) {
+      return res.json({ items: [] });
+    }
+    console.log(codes, 'rawCodes')
+    const cartItems = codes.map((productCode) => ({ productCode, qty: 1 }));
+    const items = await fetchCartProductsAsQuoteItems(cartItems);
+    console.log(items, 'items')
+    return res.json({ items });
+
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to load cart products" });
+  }
+});
+
 router.get("/:id", (req: Request, res: Response) => {
+  console.log(req.query.codes, 'body')
   const quote = quotes.find((q) => q.id === req.params.id);
+  console.log(quote, 'quote')
   if (!quote) return res.status(404).json({ error: "Quote not found" });
   res.json(quote);
 });

@@ -1,8 +1,17 @@
+import dotenv from "dotenv";
+dotenv.config();
 import express from "express";
 import quotesRouter from "./routes/quotes";
+import cors from "cors";
 
 const app = express();
-const port = Number(process.env.PORT ?? 3001);
+const port = Number(process.env.PORT ?? 5000);
+
+const corsOPtions = {
+  origin: '*'
+}
+
+app.use(cors(corsOPtions));
 
 app.use(express.json());
 
