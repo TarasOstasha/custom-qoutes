@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { Quote, QuoteItem, quotes } from "../mock/quotes";
 import { fetchCartProductsAsQuoteItems } from "../services/volusion";
+import { identifyVolusionUser } from "../services/identifyUser";
 
 const router = Router();
 
@@ -65,6 +66,20 @@ router.get("/cart-products", async (req: Request, res: Response) => {
 
   } catch (error) {
     return res.status(500).json({ error: "Failed to load cart products" });
+  }
+});
+
+router.post("/identify-user", async (req: Request, res: Response) => {
+  try {
+    const cartId =
+      String((req.body as { cartId?: string } | undefined)?.cartId ?? "").trim() ||
+      // "07387C5E1E344F7DB151AE80E9894EE7";
+      "12852396D40849BCA57B539799B3C3A8";
+    const result = await identifyVolusionUser(cartId);
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to identify user";
+    return res.status(500).json({ error: message });
   }
 });
 

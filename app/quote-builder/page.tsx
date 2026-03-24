@@ -40,8 +40,10 @@ function recalc(items: QuoteItem[]) {
 
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(mockQuote);
+  const [identifyLoading, setIdentifyLoading] = useState(false);
+  const [identifiedEmail, setIdentifiedEmail] = useState<string | null>(null);
   const mockCart = {
-    cartId: "07387C5E1E344F7DB151AE80E9894EE7",
+    cartId: "12852396D40849BCA57B539799B3C3A8",//"07387C5E1E344F7DB151AE80E9894EE7",
     cartItems: [{ productCode: "ws54360", qty: 5 }],
   };
 
@@ -122,8 +124,46 @@ export default function QuoteBuilderPage() {
     });
   };
 
+  const identifyUser = async () => {
+    setIdentifyLoading(true);
+    setIdentifiedEmail(null);
+    try {
+      const response = await fetch(`${apiBase}/quotes/identify-user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartId: mockCart.cartId }),
+      });
+      const data = (await response.json()) as { cartId?: string; email?: string | null; error?: string };
+      if (!response.ok) {
+        alert(data?.error ?? "Identify User failed");
+        return;
+      }
+      setIdentifiedEmail(data.email ?? null);
+    } finally {
+      setIdentifyLoading(false);
+    }
+  };
+
   return (
     <main className="container">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes quote-builder-identify-spin {
+              to { transform: rotate(360deg); }
+            }
+            .quote-builder-identify-spinner {
+              width: 16px;
+              height: 16px;
+              border: 2px solid #9ca3af;
+              border-top-color: #1d4ed8;
+              border-radius: 50%;
+              animation: quote-builder-identify-spin 0.65s linear infinite;
+              flex-shrink: 0;
+            }
+          `,
+        }}
+      />
       <div className="card section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>
@@ -257,6 +297,32 @@ export default function QuoteBuilderPage() {
             <button className="btn" onClick={addCartProducts}>
               Add Cart Products
             </button>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={identifyUser}
+                disabled={identifyLoading}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                {identifyLoading ? (
+                  <>
+                    <span className="quote-builder-identify-spinner" aria-hidden />
+                    <span>Identify User</span>
+                  </>
+                ) : (
+                  "Identify User"
+                )}
+              </button>
+              {identifyLoading ? (
+                <span className="muted" style={{ fontWeight: 600 }}>
+                  Loading cart data...
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 14 }}>
+            Identified Email: {identifiedEmail ?? "Not found"}
           </div>
         </div>
 
