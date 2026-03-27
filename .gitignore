@@ -26,6 +26,7 @@ pnpm-debug.log*
 .env.development.local
 .env.test.local
 .env.production.local
+.env.example
 
 # vercel
 .vercel
@@ -59,3 +60,5 @@ Thumbs.db
 
 # http test files (optional)
 tests/httpRequests/*.http
+
+.playwright-volusion-profile/

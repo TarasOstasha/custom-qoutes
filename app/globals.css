@@ -186,8 +186,24 @@ th {
   margin: 8px auto;
   width: 300px;
   height: 160px;
-  object-fit: cover;
+  object-fit: contain;
   border: 1px solid #d1d5db;
+}
+
+.quote-preview-remove-line {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 6px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+}
+
+.quote-preview-remove-line:hover {
+  color: #dc2626;
 }
 
 @media (max-width: 900px) {
