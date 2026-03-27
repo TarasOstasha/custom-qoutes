@@ -1,13 +1,37 @@
+"use client";
+
 import Link from "next/link";
-import { mockQuote } from "../../lib/mockQuote";
+import { useLayoutEffect, useState } from "react";
+import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
+import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
+import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
+import { exportQuoteToExcel } from "../../lib/exportQuoteToExcel";
+import { recalcQuote } from "../../lib/recalcQuote";
+import { clearQuoteDraft, loadQuoteFromPreviewStorage, saveQuoteDraft } from "../../lib/quotePreviewStorage";
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 export default function QuotePreviewPage() {
-  const quote = mockQuote;
-  const previewImage = quote.items.find((i) => i.imageUrl)?.imageUrl;
+  const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
+
+  useLayoutEffect(() => {
+    const stored = loadQuoteFromPreviewStorage();
+    if (stored) setQuote(stored);
+  }, []);
+
+  const removeLine = (itemId: string) => {
+    setQuote((prev) => {
+      const items = prev.items.filter((i) => i.id !== itemId);
+      const next = {
+        ...prev,
+        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+      };
+      saveQuoteDraft(next);
+      return next;
+    });
+  };
 
   return (
     <main className="container">
@@ -15,7 +39,23 @@ export default function QuotePreviewPage() {
         <Link className="btn" href="/quote-builder">
           Back to Builder
         </Link>
-        <button className="btn">Export Excel</button>
+        <button type="button" className="btn" onClick={() => void exportQuoteToExcel(quote)}>
+          Export Excel
+        </button>
+        <button type="button" className="btn" onClick={() => window.location.reload()}>
+          Reload app
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            if (!window.confirm("Clear all quote data from this browser?")) return;
+            clearQuoteDraft();
+            setQuote(createEmptyQuote());
+          }}
+        >
+          Clear data
+        </button>
       </div>
 
       <section className="preview-sheet">
@@ -43,22 +83,15 @@ export default function QuotePreviewPage() {
           </table>
         </div>
 
-        <div className="preview-block">
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>TO</div>
-          <div>{quote.customerName}</div>
-          <div>{quote.customerCompany}</div>
-          <div>{quote.customerEmail}</div>
-        </div>
-
-        <div className="preview-block">
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>DESCRIPTION:</div>
-          {previewImage ? (
-            <img src={previewImage} alt="Quoted product preview" className="preview-image" />
-          ) : (
-            <div className="preview-image" style={{ display: "grid", placeItems: "center", color: "#6b7280" }}>
-              Product Image
-            </div>
-          )}
+        <div className="preview-block" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 16 }}>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>TO</div>
+            <div>{quote.customerName || "—"}</div>
+            <div>{quote.customerCompany || ""}</div>
+            <div>{quote.customerEmail || ""}</div>
+            {quote.customerPhone ? <div>{quote.customerPhone}</div> : null}
+          </div>
+          <QuoteLineItemImageGallery items={quote.items} variant="preview" />
         </div>
 
         <div className="preview-block">
@@ -73,24 +106,76 @@ export default function QuotePreviewPage() {
               </tr>
             </thead>
             <tbody>
-              {quote.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.sku || "-"}</td>
-                  <td>
-                    <div>{item.name}</div>
-                    {item.description ? <div className="muted">{item.description}</div> : null}
+              {quote.items.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="muted" style={{ padding: "16px 8px" }}>
+                    No line items yet. Add items in the builder, then open Preview again.
                   </td>
-                  <td className="right">{item.qty}</td>
-                  <td className="right">{money(item.unitPrice)}</td>
-                  <td className="right">{money(item.lineTotal)}</td>
                 </tr>
-              ))}
+              ) : (
+                quote.items.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.sku || "—"}</td>
+                    <td>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
+                          {item.imageUrl ? (
+                            <img
+                              src={normalizeProductImageUrl(item.imageUrl) ?? item.imageUrl}
+                              alt=""
+                              style={{
+                                width: 40,
+                                height: 40,
+                                objectFit: "cover",
+                                borderRadius: 6,
+                                border: "1px solid #e5e7eb",
+                                flex: "0 0 auto",
+                              }}
+                            />
+                          ) : null}
+                          <div style={{ minWidth: 0 }}>
+                            <div>{item.name}</div>
+                            {item.description ? <div className="muted">{item.description}</div> : null}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="quote-preview-remove-line"
+                          aria-label={`Remove ${item.name}`}
+                          title="Remove line"
+                          onClick={() => removeLine(item.id)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </td>
+                    <td className="right">{item.qty}</td>
+                    <td className="right">{money(item.unitPrice)}</td>
+                    <td className="right">{money(item.lineTotal)}</td>
+                  </tr>
+                ))
+              )}
               <tr>
                 <td colSpan={4} className="right">
                   Subtotal
                 </td>
                 <td className="right">{money(quote.subtotal)}</td>
               </tr>
+              {quote.discountTotal > 0 ? (
+                <tr>
+                  <td colSpan={4} className="right">
+                    Discounts
+                  </td>
+                  <td className="right">−{money(quote.discountTotal)}</td>
+                </tr>
+              ) : null}
               <tr>
                 <td colSpan={4} className="right">
                   Shipping
@@ -101,7 +186,7 @@ export default function QuotePreviewPage() {
                 <td colSpan={4} className="right">
                   Sales Tax
                 </td>
-                <td className="right">{quote.taxTotal === 0 ? "N/A" : money(quote.taxTotal)}</td>
+                <td className="right">{money(quote.taxTotal)}</td>
               </tr>
               <tr>
                 <td colSpan={4} className="right" style={{ fontWeight: 700 }}>
@@ -117,7 +202,7 @@ export default function QuotePreviewPage() {
 
         <div className="preview-block" style={{ minHeight: 80 }}>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>NOTES:</div>
-          <div className="muted">{quote.notes}</div>
+          <div className="muted">{quote.notes || "—"}</div>
         </div>
 
         <div className="preview-block muted" style={{ textAlign: "center" }}>
