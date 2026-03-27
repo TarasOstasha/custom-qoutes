@@ -124,3 +124,28 @@ export const mockQuote: Quote = {
     },
   ],
 };
+
+/** Fresh quote for builder / after clearing stored draft. */
+export function createEmptyQuote(): Quote {
+  const t = new Date().toISOString();
+  return {
+    id: "q_draft",
+    quoteNumber: "EX260127A",
+    status: "draft",
+    version: 1,
+    customerName: null,
+    customerCompany: null,
+    customerEmail: null,
+    customerPhone: null,
+    notes: null,
+    subtotal: 0,
+    discountTotal: 0,
+    shippingTotal: 0,
+    taxTotal: 0,
+    grandTotal: 0,
+    items: [],
+    createdAt: t,
+    updatedAt: t,
+    quoteDate: new Date().toLocaleDateString("en-US"),
+  };
+}
