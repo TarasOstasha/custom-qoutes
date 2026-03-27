@@ -1,53 +1,56 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../../lib/apiBase";
-import { mockQuote, Quote, QuoteItem } from "../../lib/mockQuote";
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
+import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
+import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
+import { exportQuoteToExcel } from "../../lib/exportQuoteToExcel";
+import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
+import { recalcQuote, round2 } from "../../lib/recalcQuote";
+import {
+  clearQuoteDraft,
+  loadQuoteFromPreviewStorage,
+  saveQuoteDraft,
+} from "../../lib/quotePreviewStorage";
+import AddPopupWindow from "../../components/AddPopupWindow";
 
 function currency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-function recalc(items: QuoteItem[]) {
-  const mapped = items.map((item) => {
-    const lineSubtotal = round2(item.qty * item.unitPrice);
-    const lineDiscountTotal =
-      item.discountType === "percent"
-        ? round2((lineSubtotal * item.discountValue) / 100)
-        : item.discountType === "amount"
-          ? round2(item.discountValue)
-          : 0;
-    const lineTotal = round2(Math.max(0, lineSubtotal - lineDiscountTotal));
-    return { ...item, lineSubtotal, lineDiscountTotal, lineTotal };
-  });
-
-  const nonShipping = mapped.filter((i) => i.name !== "Shipping");
-  const shipping = mapped.filter((i) => i.name === "Shipping");
-
-  const subtotal = round2(nonShipping.reduce((s, i) => s + i.lineSubtotal, 0));
-  const discountTotal = round2(nonShipping.reduce((s, i) => s + i.lineDiscountTotal, 0));
-  const shippingTotal = round2(shipping.reduce((s, i) => s + i.lineTotal, 0));
-  const taxTotal = 0;
-  const grandTotal = round2(subtotal - discountTotal + shippingTotal + taxTotal);
-
-  return { items: mapped, subtotal, discountTotal, shippingTotal, taxTotal, grandTotal };
-}
-
 export default function QuoteBuilderPage() {
-  const [quote, setQuote] = useState<Quote>(mockQuote);
+  const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
+  const skipNextPersist = useRef(false);
+
+  useLayoutEffect(() => {
+    const stored = loadQuoteFromPreviewStorage();
+    if (stored) {
+      setQuote(stored);
+      skipNextPersist.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (skipNextPersist.current) {
+      skipNextPersist.current = false;
+      return;
+    }
+    saveQuoteDraft(quote);
+  }, [quote]);
   const [identifyLoading, setIdentifyLoading] = useState(false);
   const [identifiedEmail, setIdentifiedEmail] = useState<string | null>(null);
-  const mockCart = {
-    cartId: "12852396D40849BCA57B539799B3C3A8",//"07387C5E1E344F7DB151AE80E9894EE7",
-    cartItems: [{ productCode: "ws54360", qty: 5 }],
-  };
+  const [copyCartLoading, setCopyCartLoading] = useState(false);
+  const [openCartSessionLoading, setOpenCartSessionLoading] = useState(false);
+  const [addVolusionLoading, setAddVolusionLoading] = useState(false);
+  const [scrapeCartServerLoading, setScrapeCartServerLoading] = useState(false);
+  const [liveSessionUrl, setLiveSessionUrl] = useState<string | null>(null);
+  const [lastCartPayload, setLastCartPayload] = useState<CartPayload | null>(null);
 
-  const totals = useMemo(() => recalc(quote.items), [quote.items]);
+  const totals = useMemo(
+    () => recalcQuote(quote.items, { shippingTotal: quote.shippingTotal, taxTotal: quote.taxTotal }),
+    [quote.items, quote.shippingTotal, quote.taxTotal]
+  );
 
   const updateItem = (index: number, patch: Partial<QuoteItem>) => {
     setQuote((prev) => {
@@ -55,7 +58,20 @@ export default function QuoteBuilderPage() {
       const current = items[index];
       if (!current) return prev;
       items[index] = { ...current, ...patch } as QuoteItem;
-      return { ...prev, ...recalc(items) };
+      return {
+        ...prev,
+        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+      };
+    });
+  };
+
+  const removeLine = (itemId: string) => {
+    setQuote((prev) => {
+      const items = prev.items.filter((i) => i.id !== itemId);
+      return {
+        ...prev,
+        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+      };
     });
   };
 
@@ -84,35 +100,79 @@ export default function QuoteBuilderPage() {
 
     setQuote((prev) => {
       const items = [...prev.items, newItem];
-      return { ...prev, ...recalc(items) };
+      return {
+        ...prev,
+        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+      };
     });
   };
 
-  const addCartProducts = async () => {
-    const codes = mockCart.cartItems.map((i) => i.productCode).join(",");
-    console.log(codes, 'codes')
-    const response = await fetch(`${apiBase}/quotes/cart-products?codes=${encodeURIComponent(codes)}`, {
-      // method: "GET",
-      // headers: { "Content-Type": "application/json" },
-    });
-    if (!response.ok) return;
-
-    const data = (await response.json()) as { items?: QuoteItem[] };
-    const returnedItems = Array.isArray(data.items) ? data.items : [];
-    const qtyByCode = new Map(
-      mockCart.cartItems.map((i) => [i.productCode.toLowerCase(), Number(i.qty)] as const)
-    );
+  const appendScrapedCartPayload = (payload: CartPayload) => {
+    const cartItems = payload.cartItems;
     const now = new Date().toISOString();
 
-    const mappedItems = returnedItems.map((item, index) => {
-      const code = (item.sku ?? item.sourceProductId ?? "").toLowerCase();
-      const qty = qtyByCode.get(code) ?? item.qty;
+    const normalized = new Map<
+      string,
+      { productCode: string; name: string; qty: number; unitPrice: number; lineTotal: number; imageUrl?: string }
+    >();
+    for (const row of cartItems) {
+      const productCode = (row.productCode ?? "").trim();
+      const name = (row.name ?? "").trim();
+      if (!productCode && !name) continue;
+      if (/^empty my entire cart$/i.test(name)) continue;
+      const key = `${productCode.toLowerCase()}|${name.toLowerCase()}`;
+      const existing = normalized.get(key);
+      if (!existing) {
+        normalized.set(key, row);
+        continue;
+      }
+
+      // Keep the richer/priced row when duplicate lines exist in scraped markup.
+      const existingScore = (existing.lineTotal > 0 ? 2 : 0) + (existing.unitPrice > 0 ? 1 : 0);
+      const nextScore = (row.lineTotal > 0 ? 2 : 0) + (row.unitPrice > 0 ? 1 : 0);
+      if (nextScore > existingScore) {
+        normalized.set(key, row);
+      } else if (nextScore === existingScore) {
+        normalized.set(key, {
+          ...existing,
+          qty: Math.max(existing.qty, row.qty),
+          lineTotal: Math.max(existing.lineTotal, row.lineTotal),
+          unitPrice: Math.max(existing.unitPrice, row.unitPrice),
+          ...((existing.imageUrl || row.imageUrl)
+            ? { imageUrl: existing.imageUrl || row.imageUrl }
+            : {}),
+        });
+      }
+    }
+    const dedupedRows = Array.from(normalized.values());
+
+    const mappedItems = dedupedRows.map((row, index) => {
+      const qty = Number.isFinite(row.qty) && row.qty > 0 ? row.qty : 1;
+      const unitPrice =
+        Number.isFinite(row.unitPrice) && row.unitPrice > 0
+          ? row.unitPrice
+          : qty > 0 && Number.isFinite(row.lineTotal)
+            ? round2(row.lineTotal / qty)
+            : 0;
+      const lineSubtotal = round2(unitPrice * qty);
+
       return {
-        ...item,
-        id: `qi_cart_${Date.now()}_${index}`,
+        id: `qi_scrape_${Date.now()}_${index}`,
         quoteId: quote.id,
+        lineType: "product",
+        sourceProductId: row.productCode || null,
+        sku: row.productCode || null,
+        imageUrl: row.imageUrl ?? null,
+        name: row.name || row.productCode || "Cart Item",
+        description: null,
         qty,
+        unitPrice,
+        discountType: "none",
+        discountValue: 0,
         sortOrder: quote.items.length + index + 1,
+        lineSubtotal,
+        lineDiscountTotal: 0,
+        lineTotal: lineSubtotal,
         createdAt: now,
         updatedAt: now,
       } as QuoteItem;
@@ -120,18 +180,142 @@ export default function QuoteBuilderPage() {
 
     setQuote((prev) => {
       const items = [...prev.items, ...mappedItems];
-      return { ...prev, ...recalc(items) };
+      return {
+        ...prev,
+        ...recalcQuote(items, {
+          shippingTotal: payload.shippingTotal ?? 0,
+          taxTotal: payload.taxTotal ?? 0,
+        }),
+      };
     });
   };
 
+  const addVolusionProducts = async () => {
+    alert('Open popup window where can add product codes');
+    return;
+    // const cartItems = lastCartPayload?.cartItems ?? [];
+    // if (!cartItems.length) {
+    //   alert("No cart loaded yet. Use Copy Cart or Add Products From Cart first.");
+    //   return;
+    // }
+
+    // setAddVolusionLoading(true);
+    // try {
+    //   const codes = cartItems.map((i) => i.productCode).filter(Boolean).join(",");
+    //   if (!codes) return;
+
+    //   const response = await fetch(`${apiBase}/quotes/cart-products?codes=${encodeURIComponent(codes)}`);
+    //   const data = (await response.json()) as { items?: QuoteItem[]; error?: string };
+    //   if (!response.ok) {
+    //     alert(data?.error ?? "Failed to load Volusion products");
+    //     return;
+    //   }
+
+    //   const returnedItems = Array.isArray(data.items) ? data.items : [];
+    //   const qtyByCode = new Map(cartItems.map((i) => [i.productCode.toLowerCase(), Number(i.qty)] as const));
+    //   const imageByCode = new Map(
+    //     cartItems
+    //       .filter((i) => Boolean(i.imageUrl))
+    //       .map((i) => [i.productCode.toLowerCase(), i.imageUrl as string] as const)
+    //   );
+    //   const now = new Date().toISOString();
+
+    //   const mappedItems = returnedItems.map((item, index) => {
+    //     const code = (item.sku ?? item.sourceProductId ?? "").toLowerCase();
+    //     const qty = qtyByCode.get(code) ?? item.qty;
+    //     const imageUrl = imageByCode.get(code) ?? item.imageUrl ?? null;
+    //     return {
+    //       ...item,
+    //       id: `qi_volusion_${Date.now()}_${index}`,
+    //       quoteId: quote.id,
+    //       qty,
+    //       imageUrl,
+    //       sortOrder: quote.items.length + index + 1,
+    //       createdAt: now,
+    //       updatedAt: now,
+    //     } as QuoteItem;
+    //   });
+
+    //   setQuote((prev) => {
+    //     const items = [...prev.items, ...mappedItems];
+    //     return {
+    //       ...prev,
+    //       ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+    //     };
+    //   });
+    // } finally {
+    //   setAddVolusionLoading(false);
+    // }
+  };
+
+  const copyCart = async () => {
+    setCopyCartLoading(true);
+    try {
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      const payload = extractCartFromPage();
+      console.log(payload);
+      setLastCartPayload(payload);
+      if (!payload.cartItems.length && !payload.shippingTotal && !payload.taxTotal) return;
+      appendScrapedCartPayload(payload);
+    } finally {
+      setCopyCartLoading(false);
+    }
+  };
+
+  /** Playwright on the API uses a persistent Chromium profile (`VOLUSION_PLAYWRIGHT_USER_DATA_DIR`); no cookies in the request. */
+  const openLiveCartSession = async () => {
+    setOpenCartSessionLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/api/cart/open-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json()) as { opened?: boolean; url?: string; error?: string };
+      if (!response.ok) {
+        alert(data?.error ?? "Failed to open cart session");
+        return;
+      }
+      setLiveSessionUrl(data.url ?? null);
+    } finally {
+      setOpenCartSessionLoading(false);
+    }
+  };
+
+  const copyCartViaServer = async () => {
+    setScrapeCartServerLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/quotes/scrape-cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json()) as CartPayload & { error?: string };
+      if (!response.ok) {
+        alert(data?.error ?? "Scrape cart failed");
+        return;
+      }
+      setLastCartPayload(data);
+      if (!data.cartItems?.length && !data.shippingTotal && !data.taxTotal) return;
+      appendScrapedCartPayload(data);
+    } finally {
+      setScrapeCartServerLoading(false);
+    }
+  };
+
   const identifyUser = async () => {
+    const cartId = lastCartPayload?.cartId?.trim() || "";
+    if (!cartId) {
+      alert("No cart loaded yet. Use Copy Cart or Add Products From Cart first.");
+      return;
+    }
     setIdentifyLoading(true);
     setIdentifiedEmail(null);
     try {
       const response = await fetch(`${apiBase}/quotes/identify-user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cartId: mockCart.cartId }),
+        body: JSON.stringify({ cartId }),
       });
       const data = (await response.json()) as { cartId?: string; email?: string | null; error?: string };
       if (!response.ok) {
@@ -174,7 +358,28 @@ export default function QuoteBuilderPage() {
           </div>
           <div className="actions">
             <button className="btn">Add Product</button>
-            <button className="btn">Export Excel</button>
+            <button type="button" className="btn" onClick={() => void exportQuoteToExcel(quote)}>
+              Export Excel
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => window.location.reload()}
+            >
+              Reload app
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                if (!window.confirm("Clear all quote data from this browser?")) return;
+                clearQuoteDraft();
+                setLastCartPayload(null);
+                setQuote(createEmptyQuote());
+              }}
+            >
+              Clear data
+            </button>
             <Link className="btn primary" href="/quote-preview">
               Preview Quote
             </Link>
@@ -237,6 +442,11 @@ export default function QuoteBuilderPage() {
         </div>
 
         <div className="section">
+          <h2 style={{ marginTop: 0 }}>Product images</h2>
+          <QuoteLineItemImageGallery items={quote.items} variant="builder" />
+        </div>
+
+        <div className="section">
           <h2 style={{ marginTop: 0 }}>Line Items</h2>
           <table>
             <thead>
@@ -259,16 +469,37 @@ export default function QuoteBuilderPage() {
                     />
                   </td>
                   <td>
-                    <input
-                      value={item.name}
-                      onChange={(e) => updateItem(index, { name: e.target.value })}
-                      style={{ marginBottom: 6 }}
-                    />
-                    <input
-                      value={item.description ?? ""}
-                      onChange={(e) => updateItem(index, { description: e.target.value })}
-                      placeholder="Optional description"
-                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <input
+                          value={item.name}
+                          onChange={(e) => updateItem(index, { name: e.target.value })}
+                          style={{ marginBottom: 6, width: "100%" }}
+                        />
+                        <input
+                          value={item.description ?? ""}
+                          onChange={(e) => updateItem(index, { description: e.target.value })}
+                          placeholder="Optional description"
+                          style={{ width: "100%" }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="quote-preview-remove-line"
+                        aria-label={`Remove ${item.name}`}
+                        title="Remove line"
+                        onClick={() => removeLine(item.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <input
@@ -294,9 +525,10 @@ export default function QuoteBuilderPage() {
             <button className="btn" onClick={addCustomItem}>
               Add Custom Item
             </button>
-            <button className="btn" onClick={addCartProducts}>
-              Add Cart Products
-            </button>
+            {/* <button className="btn" onClick={addVolusionProducts} disabled={addVolusionLoading}>
+              {addVolusionLoading ? "Adding Volusion..." : "Add Volusion Products"}
+            </button> */}
+            <AddPopupWindow onAdd={addVolusionProducts} />
             <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
               <button
                 type="button"
@@ -320,13 +552,89 @@ export default function QuoteBuilderPage() {
                 </span>
               ) : null}
             </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={copyCart}
+                disabled={copyCartLoading || identifyLoading}
+              >
+                Copy Cart
+              </button>
+              {copyCartLoading ? (
+                <span className="muted" style={{ fontWeight: 600 }}>
+                  Reading cart...
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <p className="muted" style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.45 }}>
+              Server scrape uses Playwright with a persistent profile only. Set{" "}
+              <code style={{ fontSize: 12 }}>VOLUSION_PLAYWRIGHT_USER_DATA_DIR</code> on the API. The scrape runs
+              headless from the current persistent session; no cookies are sent in the request body.
+            </p>
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={openLiveCartSession}
+                disabled={openCartSessionLoading || identifyLoading || Boolean(liveSessionUrl)}
+                style={{ marginRight: 8 }}
+              >
+                {openCartSessionLoading
+                  ? "Opening cart session…"
+                  : liveSessionUrl
+                    ? "Session Ready"
+                    : "Open Live Website Session"}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={copyCartViaServer}
+                disabled={scrapeCartServerLoading || openCartSessionLoading || identifyLoading}
+              >
+                {scrapeCartServerLoading ? "Reading live cart…" : "Add Products From Cart"}
+              </button>
+            </div>
+            {liveSessionUrl ? (
+              <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                Live session page: {liveSessionUrl}
+              </div>
+            ) : null}
           </div>
           <div style={{ marginTop: 10, fontSize: 14 }}>
             Identified Email: {identifiedEmail ?? "Not found"}
           </div>
+          {lastCartPayload ? (
+            <div style={{ marginTop: 6, fontSize: 12 }} className="muted">
+              Last cart: {lastCartPayload.cartId} · {lastCartPayload.cartItems.length} item(s) · tax{" "}
+              {currency(lastCartPayload.taxTotal)} · total {currency(lastCartPayload.grandTotal)}
+            </div>
+          ) : null}
         </div>
 
-        <div className="section">
+        <div className="section" style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
+          <div>
+            <label htmlFor="quote-notes-builder">Notes</label>
+            <textarea
+              id="quote-notes-builder"
+              value={quote.notes ?? ""}
+              onChange={(e) => setQuote((prev) => ({ ...prev, notes: e.target.value }))}
+              placeholder="Add internal or customer-facing notes"
+              style={{
+                marginTop: 8,
+                width: "100%",
+                minHeight: 108,
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                padding: "10px 12px",
+                font: "inherit",
+                resize: "vertical",
+                background: "#fff",
+              }}
+            />
+          </div>
           <div className="totals">
             <div className="totals-row">
               <span>Subtotal</span>
