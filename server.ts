@@ -3,6 +3,7 @@ dotenv.config();
 import express from "express";
 import quotesRouter from "./routes/quotes";
 import cors from "cors";
+import { openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
 
 const app = express();
 const port = Number(process.env.PORT ?? 5000);
@@ -17,6 +18,16 @@ app.use(express.json());
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.post("/api/cart/open-session", async (_req, res) => {
+  try {
+    const result = await openVisibleVolusionHomepageSession();
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to open live website session";
+    return res.status(500).json({ error: message });
+  }
 });
 
 app.use("/quotes", quotesRouter);
