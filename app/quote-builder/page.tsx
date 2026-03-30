@@ -191,62 +191,59 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  const addVolusionProducts = async () => {
-    alert('Open popup window where can add product codes');
-    return;
-    // const cartItems = lastCartPayload?.cartItems ?? [];
-    // if (!cartItems.length) {
-    //   alert("No cart loaded yet. Use Copy Cart or Add Products From Cart first.");
-    //   return;
-    // }
+  const addVolusionProducts = async (productCodeInput?: string) => {
+    const inputCodes = (productCodeInput ?? "")
+      .split(",")
+      .map((code) => code.trim())
+      .filter(Boolean);
 
-    // setAddVolusionLoading(true);
-    // try {
-    //   const codes = cartItems.map((i) => i.productCode).filter(Boolean).join(",");
-    //   if (!codes) return;
+    if (!inputCodes.length) {
+      alert("Enter at least one product code.");
+      return;
+    }
 
-    //   const response = await fetch(`${apiBase}/quotes/cart-products?codes=${encodeURIComponent(codes)}`);
-    //   const data = (await response.json()) as { items?: QuoteItem[]; error?: string };
-    //   if (!response.ok) {
-    //     alert(data?.error ?? "Failed to load Volusion products");
-    //     return;
-    //   }
+    setAddVolusionLoading(true);
+    try {
+      const codes = inputCodes.join(",");
+      const response = await fetch(`${apiBase}/quotes/products?codes=${encodeURIComponent(codes)}`);
+      const data = (await response.json()) as { items?: QuoteItem[]; error?: string };
 
-    //   const returnedItems = Array.isArray(data.items) ? data.items : [];
-    //   const qtyByCode = new Map(cartItems.map((i) => [i.productCode.toLowerCase(), Number(i.qty)] as const));
-    //   const imageByCode = new Map(
-    //     cartItems
-    //       .filter((i) => Boolean(i.imageUrl))
-    //       .map((i) => [i.productCode.toLowerCase(), i.imageUrl as string] as const)
-    //   );
-    //   const now = new Date().toISOString();
+      if (!response.ok) {
+        alert(data?.error ?? "Failed to load Volusion products");
+        return;
+      }
 
-    //   const mappedItems = returnedItems.map((item, index) => {
-    //     const code = (item.sku ?? item.sourceProductId ?? "").toLowerCase();
-    //     const qty = qtyByCode.get(code) ?? item.qty;
-    //     const imageUrl = imageByCode.get(code) ?? item.imageUrl ?? null;
-    //     return {
-    //       ...item,
-    //       id: `qi_volusion_${Date.now()}_${index}`,
-    //       quoteId: quote.id,
-    //       qty,
-    //       imageUrl,
-    //       sortOrder: quote.items.length + index + 1,
-    //       createdAt: now,
-    //       updatedAt: now,
-    //     } as QuoteItem;
-    //   });
+      const returnedItems = Array.isArray(data.items) ? data.items : [];
+      if (!returnedItems.length) {
+        alert("No Volusion products were found for the provided code(s).");
+        return;
+      }
 
-    //   setQuote((prev) => {
-    //     const items = [...prev.items, ...mappedItems];
-    //     return {
-    //       ...prev,
-    //       ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
-    //     };
-    //   });
-    // } finally {
-    //   setAddVolusionLoading(false);
-    // }
+      const now = new Date().toISOString();
+
+      setQuote((prev) => {
+        const mappedItems = returnedItems.map((item, index) => {
+          return {
+            ...item,
+            id: `qi_volusion_${Date.now()}_${index}`,
+            quoteId: prev.id,
+            qty: item.qty ?? 1,
+            imageUrl: item.imageUrl ?? null,
+            sortOrder: prev.items.length + index + 1,
+            createdAt: now,
+            updatedAt: now,
+          } as QuoteItem;
+        });
+
+        const items = [...prev.items, ...mappedItems];
+        return {
+          ...prev,
+          ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        };
+      });
+    } finally {
+      setAddVolusionLoading(false);
+    }
   };
 
   const copyCart = async () => {
@@ -358,7 +355,7 @@ export default function QuoteBuilderPage() {
             </p>
           </div>
           <div className="actions">
-            <button className="btn">Add Product</button>
+            {/* <button className="btn">Add Product</button> */}
             <button type="button" className="btn" onClick={() => void exportQuoteToExcel(quote)}>
               Export Excel
             </button>
@@ -533,7 +530,7 @@ export default function QuoteBuilderPage() {
               {addVolusionLoading ? "Adding Volusion..." : "Add Volusion Products"}
             </button> */}
             <AddPopupWindow onAdd={addVolusionProducts} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <span style={{ display: "none", alignItems: "center", gap: 10 }}>
               <button
                 type="button"
                 className="btn"
@@ -556,7 +553,7 @@ export default function QuoteBuilderPage() {
                 </span>
               ) : null}
             </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <span style={{ display: "none", alignItems: "center", gap: 10 }}>
               <button
                 type="button"
                 className="btn"

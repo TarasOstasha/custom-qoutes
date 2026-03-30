@@ -51,6 +51,30 @@ router.get("/", (_req: Request, res: Response) => {
   res.json({ data: quotes });
 });
 
+// products
+router.get("/products", async (req: Request, res: Response) => {
+  try {
+    const rawCodes = String(req.query.codes ?? "");
+    
+    const codes = rawCodes
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    
+    if (!codes.length) {
+      return res.json({ items: [] });
+    }
+    console.log(codes, 'rawCodes')
+    const popupItems = codes.map((productCode) => ({ productCode, qty: 1 }));
+    const items = await fetchCartProductsAsQuoteItems(popupItems);
+    console.log(items, 'items')
+    return res.json({ items });
+
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to load products" });
+  }
+});
+
 router.get("/cart-products", async (req: Request, res: Response) => {
   try {
     const rawCodes = String(req.query.codes ?? "");
