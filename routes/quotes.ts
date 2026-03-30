@@ -74,6 +74,40 @@ router.get("/cart-products", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/image-proxy", async (req: Request, res: Response) => {
+  try {
+    const raw = String(req.query.url ?? "").trim();
+    if (!raw) return res.status(400).json({ error: "Missing url" });
+
+    let target: URL;
+    try {
+      target = new URL(raw);
+    } catch {
+      return res.status(400).json({ error: "Invalid url" });
+    }
+
+    if (!["http:", "https:"].includes(target.protocol)) {
+      return res.status(400).json({ error: "Unsupported protocol" });
+    }
+
+    const response = await fetch(target.toString());
+    if (!response.ok) {
+      return res.status(502).json({ error: "Failed to fetch image" });
+    }
+
+    const ct = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (!ct.startsWith("image/")) {
+      return res.status(415).json({ error: "URL is not an image" });
+    }
+
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const dataUrl = `data:${ct};base64,${bytes.toString("base64")}`;
+    return res.json({ dataUrl });
+  } catch {
+    return res.status(500).json({ error: "Image proxy failed" });
+  }
+});
+
 router.post("/scrape-cart", async (req: Request, res: Response) => {
   try {
     const body = req.body as { cartUrl?: string } | undefined;

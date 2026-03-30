@@ -19,6 +19,8 @@
     "dotenv": "^17.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "next": "^15.5.2",
     "playwright": "^1.58.2",
     "react": "^19.1.1",
