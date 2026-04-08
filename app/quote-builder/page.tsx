@@ -53,6 +53,29 @@ export default function QuoteBuilderPage() {
     [quote.items, quote.shippingTotal, quote.taxTotal]
   );
 
+  const applyChargeInput = (field: "shipping" | "tax", rawValue: string) => {
+    const trimmed = rawValue.trim();
+    const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
+    const isNumeric = trimmed.length > 0 && Number.isFinite(numeric);
+
+    setQuote((prev) => {
+      const nextShippingTotal = field === "shipping" ? (isNumeric ? round2(numeric) : 0) : prev.shippingTotal;
+      const nextTaxTotal = field === "tax" ? (isNumeric ? round2(numeric) : 0) : prev.taxTotal;
+      const nextLabel = trimmed.length > 0 && !isNumeric ? trimmed : null;
+
+      const recalculated = recalcQuote(prev.items, {
+        shippingTotal: nextShippingTotal,
+        taxTotal: nextTaxTotal,
+      });
+
+      return {
+        ...prev,
+        ...recalculated,
+        ...(field === "shipping" ? { shippingLabel: nextLabel } : { taxLabel: nextLabel }),
+      };
+    });
+  };
+
   const updateItem = (index: number, patch: Partial<QuoteItem>) => {
     setQuote((prev) => {
       const items = [...prev.items];
@@ -392,7 +415,10 @@ export default function QuoteBuilderPage() {
         <div className="section grid-4">
           <div>
             <label>Quote #</label>
-            <input value={quote.quoteNumber} readOnly />
+            <input
+              value={quote.quoteNumber}
+              onChange={(e) => setQuote((prev) => ({ ...prev, quoteNumber: e.target.value }))}
+            />
           </div>
           <div>
             <label>Date</label>
@@ -570,7 +596,7 @@ export default function QuoteBuilderPage() {
             </span>
           </div>
           <div style={{ marginTop: 14 }}>
-            <p className="muted" style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.45 }}>
+            <p className="muted" style={{ margin: "0 0 8px", fontSize: 13, lineHeight: 1.45, display: "none" }}>
               Server scrape uses Playwright with a persistent profile only. Set{" "}
               <code style={{ fontSize: 12 }}>VOLUSION_PLAYWRIGHT_USER_DATA_DIR</code> on the API. The scrape runs
               headless from the current persistent session; no cookies are sent in the request body.
@@ -604,7 +630,7 @@ export default function QuoteBuilderPage() {
               </div>
             ) : null}
           </div>
-          <div style={{ marginTop: 10, fontSize: 14 }}>
+          <div style={{ marginTop: 10, fontSize: 14, display: "none" }}>
             Identified Email: {identifiedEmail ?? "Not found"}
           </div>
           {lastCartPayload ? (
@@ -643,11 +669,21 @@ export default function QuoteBuilderPage() {
             </div>
             <div className="totals-row">
               <span>Shipping</span>
-              <span>{currency(totals.shippingTotal)}</span>
+              <input
+                value={quote.shippingLabel ?? String(totals.shippingTotal)}
+                onChange={(e) => applyChargeInput("shipping", e.target.value)}
+                placeholder="e.g. 25 or TBD"
+                style={{ maxWidth: 120, textAlign: "right" }}
+              />
             </div>
             <div className="totals-row">
               <span>Tax</span>
-              <span>{currency(totals.taxTotal)}</span>
+              <input
+                value={quote.taxLabel ?? String(totals.taxTotal)}
+                onChange={(e) => applyChargeInput("tax", e.target.value)}
+                placeholder="e.g. 0 or TBD"
+                style={{ maxWidth: 120, textAlign: "right" }}
+              />
             </div>
             <div className="totals-row total">
               <span>Total</span>

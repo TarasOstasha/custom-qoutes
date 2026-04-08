@@ -184,13 +184,13 @@ export default function QuotePreviewPage() {
                 <td colSpan={4} className="right">
                   Shipping
                 </td>
-                <td className="right">{money(quote.shippingTotal)}</td>
+                <td className="right">{quote.shippingLabel?.trim() ? quote.shippingLabel : money(quote.shippingTotal)}</td>
               </tr>
               <tr>
                 <td colSpan={4} className="right">
                   Sales Tax
                 </td>
-                <td className="right">{money(quote.taxTotal)}</td>
+                <td className="right">{quote.taxLabel?.trim() ? quote.taxLabel : money(quote.taxTotal)}</td>
               </tr>
               <tr>
                 <td colSpan={4} className="right" style={{ fontWeight: 700 }}>

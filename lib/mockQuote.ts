@@ -32,7 +32,9 @@ export type Quote = {
   subtotal: number;
   discountTotal: number;
   shippingTotal: number;
+  shippingLabel?: string | null;
   taxTotal: number;
+  taxLabel?: string | null;
   grandTotal: number;
   items: QuoteItem[];
   createdAt: string;
@@ -55,7 +57,9 @@ export const mockQuote: Quote = {
   subtotal: 2992.5,
   discountTotal: 607.5,
   shippingTotal: 346.32,
+  shippingLabel: null,
   taxTotal: 0,
+  taxLabel: null,
   grandTotal: 2738.82,
   createdAt: now,
   updatedAt: now,
@@ -141,7 +145,9 @@ export function createEmptyQuote(): Quote {
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,
+    shippingLabel: null,
     taxTotal: 0,
+    taxLabel: null,
     grandTotal: 0,
     items: [],
     createdAt: t,
