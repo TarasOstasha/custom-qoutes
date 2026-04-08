@@ -64,3 +64,4 @@ tests/httpRequests/*.http
 .playwright-volusion-profile/
 
 *.yml
+dist-electron/

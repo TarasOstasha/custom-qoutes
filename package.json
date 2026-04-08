@@ -2,12 +2,14 @@
   "name": "custom-quote",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "api:dev": "ts-node server.ts",
+    "electron:dev": "electron .",
+    "electron:dist": "electron-builder --win nsis",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -32,8 +34,30 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2"
+  },
+  "build": {
+    "appId": "com.xyzdisplays.customquote",
+    "productName": "Custom Quote",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
