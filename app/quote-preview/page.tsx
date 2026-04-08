@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
+import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
-import { exportQuoteToExcel } from "../../lib/exportQuoteToExcel";
-import { exportQuoteToPdf } from "../../lib/exportQuoteToPdf";
 import { recalcQuote } from "../../lib/recalcQuote";
 import { clearQuoteDraft, loadQuoteFromPreviewStorage, saveQuoteDraft } from "../../lib/quotePreviewStorage";
 
@@ -40,12 +39,7 @@ export default function QuotePreviewPage() {
         <Link className="btn" href="/quote-builder">
           Back to Builder
         </Link>
-        <button type="button" className="btn" onClick={() => void exportQuoteToExcel(quote)}>
-          Export Excel
-        </button>
-        <button style={{ backgroundColor: "red", color: "white" }} type="button" className="btn" onClick={() => void exportQuoteToPdf(quote)}>
-          Export PDF
-        </button>
+        <QuoteExportButtons quote={quote} colored />
         <button type="button" className="btn" onClick={() => window.location.reload()}>
           Reload app
         </button>

@@ -5,8 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
-import { exportQuoteToExcel } from "../../lib/exportQuoteToExcel";
-import { exportQuoteToPdf } from "../../lib/exportQuoteToPdf";
+import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
 import { recalcQuote, round2 } from "../../lib/recalcQuote";
 import {
@@ -379,12 +378,8 @@ export default function QuoteBuilderPage() {
           </div>
           <div className="actions">
             {/* <button className="btn">Add Product</button> */}
-            <button type="button" className="btn" onClick={() => void exportQuoteToExcel(quote)}>
-              Export Excel
-            </button>
-            <button type="button" className="btn" onClick={() => void exportQuoteToPdf(quote)}>
-              Export PDF
-            </button>
+            {/* <QuoteExportButtons quote={quote} /> */}
+            <QuoteExportButtons quote={quote} colored />
             <button
               type="button"
               className="btn"
