@@ -92,7 +92,15 @@ async function fetchImageForExcel(
 }
 
 async function loadLogoForExcel(): Promise<{ base64: string; extension: "jpeg" | "png" | "gif" } | null> {
-  const candidates = ["/images/logo.png", "/images/logo.jpg", "/images/logo.jpeg", "/logo.png"];
+  const candidates = [
+    "/images/quote-logo.jpg",
+    "/images/quote-logo.jpeg",
+    "/images/quote-logo.png",
+    "/images/logo.png",
+    "/images/logo.jpg",
+    "/images/logo.jpeg",
+    "/logo.png",
+  ];
   for (const src of candidates) {
     const loaded = await fetchImageForExcel(src);
     if (loaded) return loaded;
@@ -162,7 +170,6 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   const galleryCell = ws.getCell(`C${toBlockStart}`);
   galleryCell.value = "Product images";
   galleryCell.alignment = { vertical: "top", horizontal: "center", wrapText: true };
-  applyBorderRange(ws, toBlockStart, 3, toBlockStart + 3, 5);
   row += 1;
 
   ws.mergeCells(`A${row}:B${row}`);
@@ -193,7 +200,7 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   const rowSpacing = 3.3;
   const imageWidth = 78;
   const imageHeight = 78;
-  const imageOffsets = [0, 0.18, 0, 0];
+  const imageOffsets = [0, 0.28, 0, 0];
   const imageWidths = [78, 68, 68, 78];
 
   let embeddedGallery = 0;
