@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:api": "tsc -p tsconfig.server.json",
+    "build:prod": "npm run build && npm run build:api",
     "start": "next start",
     "api:dev": "ts-node server.ts",
-    "electron:dev": "electron .",
-    "electron:dist": "electron-builder --win nsis",
+    "electron:start": "npm run build:prod && electron .",
+    "electron:dist": "npm run build:prod && electron-builder --win nsis",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -49,6 +51,19 @@
     "files": [
       "electron/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".",
+        "to": "app",
+        "filter": [
+          ".next/standalone/**/*",
+          ".next/static/**/*",
+          "dist-server/**/*",
+          "public/**/*",
+          ".env"
+        ]
+      }
     ],
     "win": {
       "target": [

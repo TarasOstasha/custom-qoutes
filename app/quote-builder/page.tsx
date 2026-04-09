@@ -22,6 +22,8 @@ function currency(n: number): string {
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
   const skipNextPersist = useRef(false);
+  const customImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [customImageTargetId, setCustomImageTargetId] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const stored = loadQuoteFromPreviewStorage();
@@ -96,6 +98,36 @@ export default function QuoteBuilderPage() {
         ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
       };
     });
+  };
+
+  const openCustomImagePicker = (itemId: string) => {
+    setCustomImageTargetId(itemId);
+    customImageInputRef.current?.click();
+  };
+
+  const handleCustomImageSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const targetId = customImageTargetId;
+    event.target.value = "";
+    if (!file || !targetId) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : null;
+      if (!result) return;
+      setQuote((prev) => {
+        const index = prev.items.findIndex((i) => i.id === targetId);
+        if (index < 0) return prev;
+        const items = [...prev.items];
+        items[index] = { ...items[index], imageUrl: result, updatedAt: new Date().toISOString() } as QuoteItem;
+        return {
+          ...prev,
+          ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        };
+      });
+      setCustomImageTargetId(null);
+    };
+    reader.readAsDataURL(file);
   };
 
   const addCustomItem = () => {
@@ -460,6 +492,25 @@ export default function QuoteBuilderPage() {
                 onChange={(e) => setQuote((prev) => ({ ...prev, customerPhone: e.target.value }))}
               />
             </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label>Address</label>
+              <textarea
+                value={quote.customerAddress ?? ""}
+                onChange={(e) => setQuote((prev) => ({ ...prev, customerAddress: e.target.value }))}
+                placeholder="Street, city, state, zip"
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  minHeight: 72,
+                  border: "1px solid #d1d5db",
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                  font: "inherit",
+                  resize: "vertical",
+                  background: "#fff",
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -489,6 +540,16 @@ export default function QuoteBuilderPage() {
                       placeholder="Custom"
                       onChange={(e) => updateItem(index, { sku: e.target.value || null })}
                     />
+                    {item.lineType === "custom" ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ marginTop: 8, width: "100%", padding: "6px 10px" }}
+                        onClick={() => openCustomImagePicker(item.id)}
+                      >
+                        {item.imageUrl ? "Change Img" : "Add Img"}
+                      </button>
+                    ) : null}
                   </td>
                   <td>
                     <div
@@ -544,6 +605,13 @@ export default function QuoteBuilderPage() {
           </table>
 
           <div className="actions" style={{ marginTop: 12 }}>
+            <input
+              ref={customImageInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleCustomImageSelected}
+              style={{ display: "none" }}
+            />
             <button className="btn" onClick={addCustomItem}>
               Add Custom Item
             </button>

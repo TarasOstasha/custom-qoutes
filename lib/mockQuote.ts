@@ -28,6 +28,7 @@ export type Quote = {
   customerCompany?: string | null;
   customerEmail?: string | null;
   customerPhone?: string | null;
+  customerAddress?: string | null;
   notes?: string | null;
   subtotal: number;
   discountTotal: number;
@@ -53,6 +54,7 @@ export const mockQuote: Quote = {
   customerCompany: "VOCO America, Inc.",
   customerEmail: "Melanie.Day@voco.com",
   customerPhone: "(973) 515-5151",
+  customerAddress: "170 Cagnesbridge Rd, Bldg A7\nMontville, NJ 07045",
   notes: "Estimate valid for 30 days",
   subtotal: 2992.5,
   discountTotal: 607.5,
@@ -141,6 +143,7 @@ export function createEmptyQuote(): Quote {
     customerCompany: null,
     customerEmail: null,
     customerPhone: null,
+    customerAddress: null,
     notes: null,
     subtotal: 0,
     discountTotal: 0,

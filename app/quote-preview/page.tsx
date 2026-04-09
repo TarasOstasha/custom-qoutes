@@ -86,6 +86,9 @@ export default function QuotePreviewPage() {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>TO</div>
             <div>{quote.customerName || "—"}</div>
             <div>{quote.customerCompany || ""}</div>
+            {quote.customerAddress ? (
+              <div style={{ whiteSpace: "pre-line" }}>{quote.customerAddress}</div>
+            ) : null}
             <div>{quote.customerEmail || ""}</div>
             {quote.customerPhone ? <div>{quote.customerPhone}</div> : null}
           </div>

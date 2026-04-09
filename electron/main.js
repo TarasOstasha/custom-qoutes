@@ -1,49 +1,22 @@
-const { app, BrowserWindow, shell } = require("electron");
-const { spawn } = require("node:child_process");
+const { app, BrowserWindow, dialog, shell } = require("electron");
 const fs = require("node:fs");
+const Module = require("module");
 const path = require("node:path");
 const http = require("node:http");
 
 const APP_URL = "http://localhost:3000";
 const API_URL = "http://localhost:5000";
 
-const rootDir = path.resolve(__dirname, "..");
+const projectRoot = path.resolve(__dirname, "..");
+const runtimeRoot = app.isPackaged ? path.join(process.resourcesPath, "app") : projectRoot;
 
-let apiProcess = null;
-let webProcess = null;
-
-function startApiProcess(extraEnv = {}) {
-  if (!app.isPackaged) {
-    return spawn("npx", ["ts-node", "server.ts"], {
-      cwd: rootDir,
-      env: { ...process.env, ...extraEnv },
-      shell: true,
-      stdio: "inherit",
-    });
+/** Extra resources (dist-server, .next) live under resources/app; node_modules stay in app.asar. */
+function ensureAsarNodeModulesOnPath() {
+  if (!app.isPackaged) return;
+  const asarNm = path.join(app.getAppPath(), "node_modules");
+  if (fs.existsSync(asarNm) && !Module.globalPaths.includes(asarNm)) {
+    Module.globalPaths.unshift(asarNm);
   }
-
-  // In packaged mode, run a dedicated API executable bundled with the app.
-  // Expected location inside installed app resources:
-  //   <resources>/api/custom-quote-api.exe
-  const apiExe = path.join(process.resourcesPath, "api", "custom-quote-api.exe");
-  if (!fs.existsSync(apiExe)) {
-    throw new Error(`Packaged API executable not found: ${apiExe}`);
-  }
-
-  return spawn(apiExe, [], {
-    cwd: path.dirname(apiExe),
-    env: { ...process.env, ...extraEnv },
-    stdio: "inherit",
-  });
-}
-
-function startWebProcess(extraEnv = {}) {
-  return spawn("npm", ["run", "dev"], {
-    cwd: rootDir,
-    env: { ...process.env, ...extraEnv },
-    shell: true,
-    stdio: "inherit",
-  });
 }
 
 function waitForHttp(url, timeoutMs = 90_000) {
@@ -77,6 +50,32 @@ function waitForHttp(url, timeoutMs = 90_000) {
   });
 }
 
+function startApiInProcess() {
+  process.env.PORT = "5000";
+  process.env.NEXT_PUBLIC_API_URL = API_URL;
+  process.env.VOLUSION_PLAYWRIGHT_HEADLESS = "false";
+  const apiEntry = path.join(runtimeRoot, "dist-server", "server.js");
+  if (!fs.existsSync(apiEntry)) {
+    throw new Error(`Missing API build output: ${apiEntry}`);
+  }
+  require(apiEntry);
+}
+
+function startWebInProcess() {
+  process.env.PORT = "3000";
+  process.env.HOSTNAME = "localhost";
+  process.env.NEXT_PUBLIC_API_URL = API_URL;
+  const standaloneDir = path.join(runtimeRoot, ".next", "standalone");
+  const standaloneEntry = path.join(standaloneDir, "server.js");
+  if (!fs.existsSync(standaloneEntry)) {
+    throw new Error(
+      `Missing Next standalone server: ${standaloneEntry}. Run "npm run build:prod" before packaging.`
+    );
+  }
+  process.chdir(standaloneDir);
+  require(standaloneEntry);
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -99,28 +98,30 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  apiProcess = startApiProcess({
-    PORT: "5000",
-    VOLUSION_PLAYWRIGHT_HEADLESS: "false",
-    NEXT_PUBLIC_API_URL: API_URL,
-  });
-
-  webProcess = startWebProcess({
-    NEXT_PUBLIC_API_URL: API_URL,
-  });
-
-  await waitForHttp(`${API_URL}/health`);
-  await waitForHttp(APP_URL);
-  createWindow();
+  try {
+    ensureAsarNodeModulesOnPath();
+    startApiInProcess();
+    startWebInProcess();
+    await waitForHttp(`${API_URL}/health`);
+    await waitForHttp(APP_URL);
+    createWindow();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    dialog.showErrorBox("Startup Error", `Failed to start local services.\n\n${message}`);
+    const fallbackWindow = new BrowserWindow({
+      width: 980,
+      height: 700,
+      autoHideMenuBar: true,
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    });
+    fallbackWindow.loadURL(`data:text/html,${encodeURIComponent(
+      `<h2>Custom Quote failed to start</h2><pre>${message}</pre>`
+    )}`);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
-
-app.on("before-quit", () => {
-  apiProcess?.kill();
-  webProcess?.kill();
 });
 
 app.on("window-all-closed", () => {
