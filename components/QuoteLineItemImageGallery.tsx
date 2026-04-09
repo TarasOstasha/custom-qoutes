@@ -11,8 +11,10 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
   const withImages = items.filter((i) => Boolean(i.imageUrl?.trim()));
 
   const isPreview = variant === "preview";
-  const imgW = isPreview ? 120 : 96;
-  const imgH = isPreview ? 100 : 80;
+  // const imgW = isPreview ? 120 : 96;
+  // const imgH = isPreview ? 100 : 80;
+  const imgW = isPreview ? 220 : 160;
+  const imgH = isPreview ? 160 : 120;
 
   return (
     <div
