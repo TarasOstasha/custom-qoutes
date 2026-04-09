@@ -57,7 +57,15 @@ export default function QuotePreviewPage() {
       </div>
 
       <section className="preview-sheet">
-        <div className="preview-header">
+        <div
+          className="preview-header"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr auto",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
           <div className="preview-company">
             <h1 style={{ margin: "0 0 6px", fontSize: 22 }}>Estimate</h1>
             <div>xyzDisplays</div>
@@ -67,23 +75,7 @@ export default function QuotePreviewPage() {
             <div>Phone: (973) 515-5151</div>
           </div>
 
-          <table className="preview-meta">
-            <tbody>
-              <tr>
-                <th>Quote</th>
-                <th>Date</th>
-              </tr>
-              <tr>
-                <td className="right">{quote.quoteNumber}</td>
-                <td className="right">{quote.quoteDate}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div className="preview-block" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 16 }}>
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>TO</div>
+          <div style={{ maxWidth: 260, justifySelf: "center", paddingTop: 36 }}>
             <div>{quote.customerName || "—"}</div>
             <div>{quote.customerCompany || ""}</div>
             {quote.customerAddress ? (
@@ -92,6 +84,26 @@ export default function QuotePreviewPage() {
             <div>{quote.customerEmail || ""}</div>
             {quote.customerPhone ? <div>{quote.customerPhone}</div> : null}
           </div>
+
+          <table className="preview-meta" style={{ width: 210, fontSize: 13 }}>
+            <tbody>
+              <tr>
+                <th style={{ padding: "8px 10px" }}>Quote</th>
+                <th style={{ padding: "8px 10px" }}>Date</th>
+              </tr>
+              <tr>
+                <td className="right" style={{ padding: "10px", textAlign: "left" }}>
+                  {quote.quoteNumber}
+                </td>
+                <td className="right" style={{ padding: "10px", textAlign: "left" }}>
+                  {quote.quoteDate}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="preview-block">
           <QuoteLineItemImageGallery items={quote.items} variant="preview" />
         </div>
 
