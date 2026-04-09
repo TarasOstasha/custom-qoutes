@@ -9,7 +9,7 @@ const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
  * Full cart DOM parse — self-contained so Playwright can `page.evaluate(this)`.
  * Do not reference module-level bindings inside (serialization runs in page context).
  */
-function extractCartPayloadInBrowser() {
+async function extractCartPayloadInBrowser() {
     const DEFAULT_ID = "07387C5E1E344F7DB151AE80E9894EE7";
     const ABSOLUTE_ASSET_BASE = "https://hxyrr-gdtbo.volusion.store";
     /** Prefer last `$12.34` token so labels like "UPS 3 Day Select $252.45" do not concatenate stray digits. */
@@ -129,6 +129,161 @@ function extractCartPayloadInBrowser() {
             return src;
         }
     }
+    function normalizeText(text) {
+        return String(text ?? "").replace(/\s+/g, " ").trim();
+    }
+    function popupDetailsPathFromAnchor(anchor) {
+        if (!anchor)
+            return "";
+        const hrefRaw = anchor.getAttribute("href") ?? "";
+        const onclickRaw = anchor.getAttribute("onclick") ?? "";
+        const raw = [hrefRaw, onclickRaw].find((x) => /Help_CartItemDetails\.asp/i.test(x)) ?? "";
+        if (!raw)
+            return "";
+        const openWindowMatch = raw.match(/OpenNewWindow\(\s*['"]([^'"]+)['"]/i);
+        const directPathMatch = raw.match(/(Help_CartItemDetails\.asp\?[^'"\s)]+)/i);
+        const path = openWindowMatch?.[1] ?? directPathMatch?.[1] ?? "";
+        return path.trim();
+    }
+    function isLikelyProductRow(tr) {
+        if (tr.querySelector('a[href*="ProductCode"], a[href*="productcode"]'))
+            return true;
+        if (tr.querySelector('input[id^="Quantity"], input[name^="Quantity"]'))
+            return true;
+        if (tr.querySelector(".cart-item-name"))
+            return true;
+        return false;
+    }
+    function findOptionsAnchorNearRow(rows, rowIndex) {
+        const current = rows[rowIndex];
+        if (!current)
+            return null;
+        const inCurrent = current.querySelector('a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]');
+        if (inCurrent)
+            return inCurrent;
+        for (let i = rowIndex + 1; i < Math.min(rows.length, rowIndex + 5); i += 1) {
+            const next = rows[i];
+            if (!next)
+                break;
+            if (isLikelyProductRow(next))
+                break;
+            const candidate = next.querySelector('a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]');
+            if (candidate)
+                return candidate;
+        }
+        return null;
+    }
+    async function scrapeOptionsFromPopupPath(path) {
+        const trimmedPath = path.trim();
+        if (!trimmedPath)
+            return [];
+        try {
+            const url = new URL(trimmedPath, window.location.href).href;
+            const response = await fetch(url, {
+                credentials: "include",
+                redirect: "follow",
+            });
+            if (!response.ok)
+                return [];
+            const html = await response.text();
+            const popupDoc = new DOMParser().parseFromString(html, "text/html");
+            const options = [];
+            const seen = new Set();
+            const rawBodyText = popupDoc.body?.textContent ?? "";
+            const extractFromOptionsSection = (rawText) => {
+                const lines = rawText
+                    .split(/\r?\n+/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                const startIndex = lines.findIndex((line) => /^options\s*:?/i.test(line));
+                if (startIndex < 0)
+                    return [];
+                const sectionLines = [];
+                for (let i = startIndex; i < lines.length; i += 1) {
+                    const line = lines[i] ?? "";
+                    if (i > startIndex && /^item\s*(name|price)\s*:?/i.test(line))
+                        break;
+                    sectionLines.push(line);
+                }
+                const parsed = [];
+                for (const rawLine of sectionLines) {
+                    const line = rawLine.replace(/^options\s*:\s*/i, "").trim();
+                    if (!line)
+                        continue;
+                    const pairMatch = line.match(/^([^:]{1,80})\s*:\s*(.+)$/);
+                    if (pairMatch) {
+                        const label = normalizeText(pairMatch[1] ?? "");
+                        const value = normalizeText(pairMatch[2] ?? "");
+                        if (label && value) {
+                            parsed.push(`${label}: ${value}`);
+                            continue;
+                        }
+                    }
+                    if (parsed.length > 0) {
+                        const last = parsed[parsed.length - 1] ?? "";
+                        parsed[parsed.length - 1] = `${last} ${line}`.trim();
+                    }
+                    else {
+                        parsed.push(line);
+                    }
+                }
+                return parsed;
+            };
+            const optionsFromSection = extractFromOptionsSection(rawBodyText);
+            optionsFromSection.forEach((opt) => {
+                if (!opt || seen.has(opt))
+                    return;
+                seen.add(opt);
+                options.push(opt);
+            });
+            if (options.length > 0)
+                return options;
+            const rows = Array.from(popupDoc.querySelectorAll("tr"));
+            rows.forEach((tr) => {
+                const cells = Array.from(tr.querySelectorAll("td")).map((td) => normalizeText(td.textContent ?? ""));
+                const nonEmptyCells = cells.filter(Boolean);
+                if (nonEmptyCells.length < 2)
+                    return;
+                const label = (nonEmptyCells[0] ?? "").replace(/:$/, "").trim();
+                const value = nonEmptyCells.slice(1).join(" ").trim();
+                if (!label || !value)
+                    return;
+                if (/^item\s*(name|price)$/i.test(label))
+                    return;
+                if (/^options$/i.test(label)) {
+                    const nestedOptions = extractFromOptionsSection(`Options: ${value}`);
+                    nestedOptions.forEach((opt) => {
+                        if (!opt || seen.has(opt))
+                            return;
+                        seen.add(opt);
+                        options.push(opt);
+                    });
+                    return;
+                }
+                const optionText = `${label}: ${value}`;
+                if (seen.has(optionText))
+                    return;
+                seen.add(optionText);
+                options.push(optionText);
+            });
+            if (options.length > 0)
+                return options;
+            // Some themes render options as plain lists instead of table rows.
+            popupDoc.querySelectorAll("li").forEach((li) => {
+                const text = normalizeText(li.textContent ?? "");
+                if (!text)
+                    return;
+                if (seen.has(text))
+                    return;
+                seen.add(text);
+                options.push(text);
+            });
+            return options;
+        }
+        catch {
+            return [];
+        }
+    }
     let cartId = DEFAULT_ID;
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get("CartID")?.trim() ||
@@ -158,9 +313,14 @@ function extractCartPayloadInBrowser() {
         if (!bodyRows.length) {
             bodyRows = table.querySelectorAll("tr");
         }
-        bodyRows.forEach((tr) => {
+        const rowList = Array.from(bodyRows).filter((tr) => !tr.closest("thead"));
+        const optionsByPath = new Map();
+        for (let rowIndex = 0; rowIndex < rowList.length; rowIndex += 1) {
+            const tr = rowList[rowIndex];
+            if (!tr)
+                continue;
             if (tr.closest("thead"))
-                return;
+                continue;
             const nameEl = tr.querySelector(".cart-item-name") ??
                 tr.querySelector('td a[href*="Product"]') ??
                 tr.querySelector('td a[href*=".asp"]');
@@ -170,7 +330,7 @@ function extractCartPayloadInBrowser() {
             const productCode = productCodeFromLink(link ?? null);
             const name = (nameEl?.textContent ?? link?.textContent ?? "").trim();
             if (!productCode && !name)
-                return;
+                continue;
             const qty = readQtyFromRow(tr);
             const tds = tr.querySelectorAll("td");
             const tdCount = tds.length;
@@ -211,6 +371,18 @@ function extractCartPayloadInBrowser() {
             }
             const imageUrl = pickProductImageSrc(tr);
             const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
+            const optionsAnchor = findOptionsAnchorNearRow(rowList, rowIndex);
+            const popupPath = popupDetailsPathFromAnchor(optionsAnchor);
+            let options = [];
+            if (popupPath) {
+                if (optionsByPath.has(popupPath)) {
+                    options = optionsByPath.get(popupPath) ?? [];
+                }
+                else {
+                    options = await scrapeOptionsFromPopupPath(popupPath);
+                    optionsByPath.set(popupPath, options);
+                }
+            }
             cartItems.push({
                 productCode: productCode || name,
                 name: name || productCode,
@@ -218,8 +390,9 @@ function extractCartPayloadInBrowser() {
                 unitPrice,
                 lineTotal,
                 ...(abs ? { imageUrl: abs } : {}),
+                ...(options.length ? { options } : {}),
             });
-        });
+        }
     }
     if (!cartItems.length) {
         const seen = new Set();
@@ -415,7 +588,7 @@ function normalizeCartPayloadImages(payload) {
         }),
     };
 }
-function extractCartFromPage() {
+async function extractCartFromPage() {
     if (typeof window === "undefined") {
         return {
             cartId: DEFAULT_CART_ID,
@@ -425,5 +598,5 @@ function extractCartFromPage() {
             grandTotal: 0,
         };
     }
-    return normalizeCartPayloadImages(extractCartPayloadInBrowser());
+    return normalizeCartPayloadImages(await extractCartPayloadInBrowser());
 }

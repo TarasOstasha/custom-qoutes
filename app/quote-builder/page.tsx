@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
@@ -18,6 +18,16 @@ import AddPopupWindow from "../../components/AddPopupWindow";
 function currency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
+
+type LineItemOptionState = {
+  loading: boolean;
+  expanded: boolean;
+  options: string[];
+  selected: string[];
+  error: string | null;
+};
+
+const DESC_SECONDARY_SEPARATOR = " || ";
 
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
@@ -48,6 +58,7 @@ export default function QuoteBuilderPage() {
   const [scrapeCartServerLoading, setScrapeCartServerLoading] = useState(false);
   const [liveSessionUrl, setLiveSessionUrl] = useState<string | null>(null);
   const [lastCartPayload, setLastCartPayload] = useState<CartPayload | null>(null);
+  const [lineItemOptions, setLineItemOptions] = useState<Record<string, LineItemOptionState>>({});
 
   const totals = useMemo(
     () => recalcQuote(quote.items, { shippingTotal: quote.shippingTotal, taxTotal: quote.taxTotal }),
@@ -96,6 +107,139 @@ export default function QuoteBuilderPage() {
       return {
         ...prev,
         ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+      };
+    });
+    setLineItemOptions((prev) => {
+      if (!prev[itemId]) return prev;
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const normalizeForMatch = (value: string): string => value.trim().toLowerCase();
+
+  const collectAvailableOptionsForItem = (item: QuoteItem): string[] => {
+    const payloadItems = lastCartPayload?.cartItems ?? [];
+    if (!payloadItems.length) return [];
+    const sku = normalizeForMatch(item.sku ?? "");
+    const name = normalizeForMatch(item.name ?? "");
+
+    const matches = payloadItems.filter((row) => {
+      const rowCode = normalizeForMatch(row.productCode ?? "");
+      const rowName = normalizeForMatch(row.name ?? "");
+      const skuMatch = Boolean(sku) && rowCode === sku;
+      const nameMatch = Boolean(name) && rowName === name;
+      return skuMatch || nameMatch;
+    });
+
+    const unique = new Set<string>();
+    matches.forEach((row) => {
+      (row.options ?? []).forEach((opt) => {
+        const normalized = opt.trim();
+        if (normalized) unique.add(normalized);
+      });
+    });
+    return Array.from(unique);
+  };
+
+  const getLineOptions = (item: QuoteItem) => {
+    setLineItemOptions((prev) => ({
+      ...prev,
+      [item.id]: {
+        loading: true,
+        expanded: true,
+        options: prev[item.id]?.options ?? [],
+        selected: prev[item.id]?.selected ?? [],
+        error: null,
+      },
+    }));
+
+    const options = collectAvailableOptionsForItem(item);
+    setLineItemOptions((prev) => ({
+      ...prev,
+      [item.id]: {
+        loading: false,
+        expanded: true,
+        options,
+        selected: prev[item.id]?.selected ?? [],
+        error: options.length ? null : "No options found for this line item in the last cart scrape.",
+      },
+    }));
+  };
+
+  const toggleLineOptions = (itemId: string) => {
+    setLineItemOptions((prev) => {
+      const current = prev[itemId];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [itemId]: {
+          ...current,
+          expanded: !current.expanded,
+        },
+      };
+    });
+  };
+
+  const toggleOptionSelection = (itemId: string, option: string) => {
+    setLineItemOptions((prev) => {
+      const current = prev[itemId];
+      if (!current) return prev;
+      const alreadySelected = current.selected.includes(option);
+      const selected = alreadySelected
+        ? current.selected.filter((entry) => entry !== option)
+        : [...current.selected, option];
+      return {
+        ...prev,
+        [itemId]: {
+          ...current,
+          selected,
+        },
+      };
+    });
+  };
+
+  const splitDescriptionFields = (description: string | null | undefined): { primary: string; secondary: string } => {
+    const raw = String(description ?? "");
+    const idx = raw.indexOf(DESC_SECONDARY_SEPARATOR);
+    if (idx < 0) return { primary: raw, secondary: "" };
+    return {
+      primary: raw.slice(0, idx),
+      secondary: raw.slice(idx + DESC_SECONDARY_SEPARATOR.length),
+    };
+  };
+
+  const mergeDescriptionFields = (primary: string, secondary: string): string => {
+    const p = primary.trim();
+    const s = secondary.trim();
+    if (p && s) return `${p}${DESC_SECONDARY_SEPARATOR}${s}`;
+    return p || s;
+  };
+
+  const updateDescriptionField = (index: number, item: QuoteItem, field: "primary" | "secondary", value: string) => {
+    const current = splitDescriptionFields(item.description ?? "");
+    const nextPrimary = field === "primary" ? value : current.primary;
+    const nextSecondary = field === "secondary" ? value : current.secondary;
+    updateItem(index, { description: mergeDescriptionFields(nextPrimary, nextSecondary) || null });
+  };
+
+  const applySelectedOptionsToDescription = (index: number, item: QuoteItem) => {
+    const selected = lineItemOptions[item.id]?.selected ?? [];
+    if (!selected.length) return;
+    const primary = selected[0] ?? "";
+    const secondary = selected.length > 1 ? selected.slice(1).join(" | ") : "";
+    updateItem(index, { description: mergeDescriptionFields(primary, secondary) || null });
+    setLineItemOptions((prev) => {
+      const current = prev[item.id];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [item.id]: {
+          ...current,
+          expanded: false,
+          selected: [],
+        },
       };
     });
   };
@@ -304,7 +448,7 @@ export default function QuoteBuilderPage() {
     setCopyCartLoading(true);
     try {
       await new Promise((r) => requestAnimationFrame(() => r(undefined)));
-      const payload = extractCartFromPage();
+      const payload = await extractCartFromPage();
       console.log(payload);
       setLastCartPayload(payload);
       if (!payload.cartItems.length && !payload.shippingTotal && !payload.taxTotal) return;
@@ -533,13 +677,36 @@ export default function QuoteBuilderPage() {
             </thead>
             <tbody>
               {quote.items.map((item, index) => (
-                <tr key={item.id}>
+                <Fragment key={item.id}>
+                <tr>
                   <td>
                     <input
                       value={item.sku ?? ""}
                       placeholder="Custom"
                       onChange={(e) => updateItem(index, { sku: e.target.value || null })}
                     />
+                    {item.lineType !== "custom" ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ marginTop: 8, width: "100%", padding: "6px 10px" }}
+                        onClick={() => {
+                          const optionState = lineItemOptions[item.id];
+                          if (optionState?.expanded) {
+                            toggleLineOptions(item.id);
+                            return;
+                          }
+                          getLineOptions(item);
+                        }}
+                        disabled={!lastCartPayload || !lastCartPayload.cartItems.length}
+                      >
+                        {lineItemOptions[item.id]?.loading
+                          ? "Loading..."
+                          : lineItemOptions[item.id]?.expanded
+                            ? "Hide Options"
+                            : "Get Options"}
+                      </button>
+                    ) : null}
                     {item.lineType === "custom" ? (
                       <button
                         type="button"
@@ -566,12 +733,27 @@ export default function QuoteBuilderPage() {
                           onChange={(e) => updateItem(index, { name: e.target.value })}
                           style={{ marginBottom: 6, width: "100%" }}
                         />
-                        <input
-                          value={item.description ?? ""}
-                          onChange={(e) => updateItem(index, { description: e.target.value })}
-                          placeholder="Optional description"
-                          style={{ width: "100%" }}
-                        />
+                        {(() => {
+                          const descFields = splitDescriptionFields(item.description ?? "");
+                          return (
+                            <>
+                              <input
+                                value={descFields.primary}
+                                onChange={(e) => updateDescriptionField(index, item, "primary", e.target.value)}
+                                placeholder="Optional description"
+                                style={{ width: "100%" }}
+                              />
+                              {descFields.secondary ? (
+                                <input
+                                  value={descFields.secondary}
+                                  onChange={(e) => updateDescriptionField(index, item, "secondary", e.target.value)}
+                                  placeholder="Additional option details"
+                                  style={{ width: "100%", marginTop: 6 }}
+                                />
+                              ) : null}
+                            </>
+                          );
+                        })()}
                       </div>
                       <button
                         type="button"
@@ -600,6 +782,99 @@ export default function QuoteBuilderPage() {
                   </td>
                   <td className="right">{currency(item.lineTotal)}</td>
                 </tr>
+                {item.lineType !== "custom" && lineItemOptions[item.id]?.expanded ? (
+                  <tr>
+                    <td colSpan={5} style={{ background: "#f8fafc", borderTop: "none", padding: 10 }}>
+                      <div
+                        style={{
+                          border: "1px solid #d1d5db",
+                          borderRadius: 6,
+                          padding: 10,
+                          background: "#fff",
+                        }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Options</div>
+                        {lineItemOptions[item.id]?.error ? (
+                          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                            {lineItemOptions[item.id]?.error}
+                          </div>
+                        ) : null}
+                        <div
+                          style={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 6,
+                            overflow: "hidden",
+                            textAlign: "left",
+                          }}
+                        >
+                        {(lineItemOptions[item.id]?.options ?? []).map((option, optionIndex) => {
+                          const checkboxId = `opt_${item.id}_${option}`;
+                          return (
+                            <label
+                              key={option}
+                              htmlFor={checkboxId}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "28px 1fr",
+                                alignItems: "start",
+                                gap: 6,
+                                padding: "7px 10px",
+                                background: optionIndex % 2 === 0 ? "#ffffff" : "#f8fafc",
+                                borderBottom:
+                                  optionIndex === (lineItemOptions[item.id]?.options?.length ?? 1) - 1
+                                    ? "none"
+                                    : "1px solid #edf2f7",
+                                fontSize: 13,
+                              }}
+                            >
+                              <input
+                                id={checkboxId}
+                                type="checkbox"
+                                checked={(lineItemOptions[item.id]?.selected ?? []).includes(option)}
+                                onChange={() => toggleOptionSelection(item.id, option)}
+                                style={{ marginTop: 2, justifySelf: "center" }}
+                              />
+                              <span>{option}</span>
+                            </label>
+                          );
+                        })}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ padding: "4px 8px", fontSize: 12 }}
+                            onClick={() => applySelectedOptionsToDescription(index, item)}
+                            disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
+                          >
+                            Apply Selected
+                          </button>
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ padding: "4px 8px", fontSize: 12 }}
+                            onClick={() =>
+                              setLineItemOptions((prev) => ({
+                                ...prev,
+                                [item.id]: {
+                                  loading: false,
+                                  expanded: true,
+                                  options: prev[item.id]?.options ?? [],
+                                  selected: [],
+                                  error: prev[item.id]?.error ?? null,
+                                },
+                              }))
+                            }
+                            disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
