@@ -88,6 +88,52 @@ export default function QuoteBuilderPage() {
     });
   };
 
+  /** Implied rate from tax $ ÷ (subtotal + shipping). */
+  const derivedTaxRatePercent = useMemo(() => {
+    const base = round2(Math.max(0, totals.subtotal + totals.shippingTotal));
+    if (base <= 0) return "";
+    const pct = (quote.taxTotal / base) * 100;
+    if (!Number.isFinite(pct) || pct <= 0) return "";
+    return pct.toFixed(2);
+  }, [totals.subtotal, totals.shippingTotal, quote.taxTotal]);
+
+  /**
+   * Draft string while the % field is focused. Without this, the value is re-derived from tax $
+   * on every keystroke, so typing "10" collapses to "1.00" after the first digit.
+   */
+  const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
+  const taxPercentDisplay = taxPercentDraft !== null ? taxPercentDraft : derivedTaxRatePercent;
+
+  const applyTaxPercentFromString = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      setQuote((prev) => {
+        const recalculated = recalcQuote(prev.items, {
+          shippingTotal: prev.shippingTotal,
+          taxTotal: 0,
+        });
+        return { ...prev, ...recalculated, taxLabel: null };
+      });
+      return;
+    }
+    const numeric = Number(trimmed.replace(/[^\d.-]/g, ""));
+    if (!Number.isFinite(numeric)) return;
+
+    setQuote((prev) => {
+      const base = round2(Math.max(0, prev.subtotal + prev.shippingTotal));
+      const nextTaxTotal = base > 0 ? round2((base * numeric) / 100) : 0;
+      const recalculated = recalcQuote(prev.items, {
+        shippingTotal: prev.shippingTotal,
+        taxTotal: nextTaxTotal,
+      });
+      return {
+        ...prev,
+        ...recalculated,
+        taxLabel: null,
+      };
+    });
+  };
+
   const updateItem = (index: number, patch: Partial<QuoteItem>) => {
     setQuote((prev) => {
       const items = [...prev.items];
@@ -1005,7 +1051,7 @@ export default function QuoteBuilderPage() {
               <span>Subtotal</span>
               <span>{currency(totals.subtotal)}</span>
             </div>
-            <div className="totals-row">
+            <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Shipping</span>
               <input
                 value={quote.shippingLabel ?? String(totals.shippingTotal)}
@@ -1014,14 +1060,36 @@ export default function QuoteBuilderPage() {
                 style={{ maxWidth: 120, textAlign: "right" }}
               />
             </div>
-            <div className="totals-row">
+            <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Tax</span>
-              <input
-                value={quote.taxLabel ?? String(totals.taxTotal)}
-                onChange={(e) => applyChargeInput("tax", e.target.value)}
-                placeholder="e.g. 0 or TBD"
-                style={{ maxWidth: 120, textAlign: "right" }}
-              />
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={taxPercentDisplay}
+                    onFocus={() => setTaxPercentDraft(derivedTaxRatePercent)}
+                    onBlur={() => setTaxPercentDraft(null)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTaxPercentDraft(v);
+                      applyTaxPercentFromString(v);
+                    }}
+                    placeholder="%"
+                    aria-label="Tax percent"
+                    style={{ width: 88, minWidth: 88, textAlign: "right" }}
+                  />
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    %
+                  </span>
+                </div>
+                <input
+                  value={quote.taxLabel ?? String(totals.taxTotal)}
+                  onChange={(e) => applyChargeInput("tax", e.target.value)}
+                  placeholder="e.g. 0 or TBD"
+                  style={{ maxWidth: 120, textAlign: "right" }}
+                />
+              </div>
             </div>
             <div className="totals-row total">
               <span>Total</span>
