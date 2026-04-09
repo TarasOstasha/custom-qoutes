@@ -595,7 +595,7 @@ export default function QuoteBuilderPage() {
           <div>
             <h1 className="title">Quote Builder</h1>
             <p className="muted" style={{ margin: "6px 0 0" }}>
-              Internal demo UI with mock data.
+              Internal UI with mock data.
             </p>
           </div>
           <div className="actions">
@@ -822,8 +822,11 @@ export default function QuoteBuilderPage() {
                   <td>
                     <input
                       type="number"
+                      step={item.lineType === "custom" ? "any" : undefined}
                       value={item.unitPrice}
-                      onChange={(e) => updateItem(index, { unitPrice: Number(e.target.value) })}
+                      onChange={(e) =>
+                        updateItem(index, { unitPrice: Number(e.target.value) })
+                      }
                     />
                   </td>
                   <td className="right">{currency(item.lineTotal)}</td>

@@ -17,7 +17,10 @@ export function recalcQuote(
         : item.discountType === "amount"
           ? round2(item.discountValue)
           : 0;
-    const lineTotal = round2(Math.max(0, lineSubtotal - lineDiscountTotal));
+    const net = round2(lineSubtotal - lineDiscountTotal);
+    // Product lines stay non-negative; custom lines allow credits (negative unit price / negative line total).
+    const lineTotal =
+      item.lineType === "custom" ? net : round2(Math.max(0, net));
     return { ...item, lineSubtotal, lineDiscountTotal, lineTotal };
   });
 
