@@ -87,59 +87,78 @@ async function exportQuoteToPdf(quote) {
     const doc = new jspdf_1.default({ orientation: "p", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 30;
-    let y = 36;
+    const centerX = pageWidth / 2;
     const logoDataUrl = await loadLogoDataUrl();
     if (logoDataUrl) {
         doc.addImage(logoDataUrl, "PNG", margin, 16, 116, 38, undefined, "FAST");
     }
+    /** Left: Estimate + company (matches quote preview). */
+    let yLeft = logoDataUrl ? 58 : 36;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("Estimate", margin, yLeft);
+    yLeft += 22;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    y += 24;
-    if (logoDataUrl)
-        y += 18;
-    doc.text("170 Cagnesbridge Rd, Bldg A7", margin, y);
-    y += 14;
-    doc.text("Montville, NJ 07045", margin, y);
-    y += 14;
-    doc.text("sales@xyzdisplays.com", margin, y);
-    y += 14;
-    doc.text("Phone: (973) 515-5151", margin, y);
-    const metaX = pageWidth - 220 - margin;
-    const metaY = 30;
-    const metaW = 220;
-    const metaH = 90;
+    doc.text("xyzDisplays", margin, yLeft);
+    yLeft += 14;
+    doc.text("170 Cagnesbridge Rd, Bldg A7", margin, yLeft);
+    yLeft += 14;
+    doc.text("Montville, NJ 07045", margin, yLeft);
+    yLeft += 14;
+    doc.text("sales@xyzdisplays.com", margin, yLeft);
+    yLeft += 14;
+    doc.text("Phone: (973) 515-5151", margin, yLeft);
+    /** Right: smaller quote / date box. */
+    const metaW = 148;
+    const metaH = 56;
+    const metaX = pageWidth - margin - metaW;
+    const metaY = 36;
     doc.setDrawColor(156, 163, 175);
     doc.rect(metaX, metaY, metaW, metaH);
     doc.line(metaX + metaW / 2, metaY, metaX + metaW / 2, metaY + metaH);
-    doc.line(metaX, metaY + 30, metaX + metaW, metaY + 30);
+    doc.line(metaX, metaY + 20, metaX + metaW, metaY + 20);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("QUOTE", metaX + 10, metaY + 18);
-    doc.text("DATE", metaX + metaW / 2 + 10, metaY + 18);
+    doc.setFontSize(8);
+    doc.text("QUOTE", metaX + 8, metaY + 13);
+    doc.text("DATE", metaX + metaW / 2 + 6, metaY + 13);
     doc.setFont("helvetica", "normal");
-    doc.text(quote.quoteNumber || "—", metaX + metaW / 2 - 10, metaY + 54, { align: "right" });
-    doc.text(quote.quoteDate || "—", metaX + metaW - 10, metaY + 54, { align: "right" });
-    y += 34;
-    doc.setDrawColor(209, 213, 219);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 24;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("TO", margin, y);
+    doc.setFontSize(10);
+    doc.text(quote.quoteNumber || "—", metaX + metaW / 2 - 6, metaY + 42, { align: "right" });
+    doc.text(quote.quoteDate || "—", metaX + metaW - 8, metaY + 42, { align: "right" });
+    /** Center: recipient (no “TO” label), aligned with header block. */
+    let yCenter = logoDataUrl ? 58 : 40;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    y += 18;
-    doc.text(quote.customerName || "—", margin, y);
-    y += 14;
-    doc.text(quote.customerCompany || "", margin, y);
-    y += 14;
-    doc.text(quote.customerEmail || "", margin, y);
-    y += 14;
-    doc.text(quote.customerPhone || "", margin, y);
-    const galleryX = 210;
-    const galleryY = 162;
-    const galleryW = pageWidth - margin - galleryX;
-    const galleryH = 82;
+    doc.text(quote.customerName || "—", centerX, yCenter, { align: "center" });
+    yCenter += 14;
+    if (quote.customerCompany?.trim()) {
+        doc.text(quote.customerCompany, centerX, yCenter, { align: "center" });
+        yCenter += 14;
+    }
+    if (quote.customerAddress?.trim()) {
+        const addrLines = doc.splitTextToSize(quote.customerAddress, 220);
+        addrLines.forEach((line) => {
+            doc.text(line, centerX, yCenter, { align: "center" });
+            yCenter += 12;
+        });
+    }
+    if (quote.customerEmail?.trim()) {
+        doc.text(quote.customerEmail, centerX, yCenter, { align: "center" });
+        yCenter += 14;
+    }
+    if (quote.customerPhone?.trim()) {
+        doc.text(quote.customerPhone, centerX, yCenter, { align: "center" });
+        yCenter += 14;
+    }
+    const headerBottom = Math.max(yLeft, yCenter, metaY + metaH) + 12;
+    doc.setDrawColor(209, 213, 219);
+    doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
+    /** Full-width image gallery — larger thumbnails. */
+    const galleryX = margin;
+    const galleryY = headerBottom + 14;
+    const galleryW = pageWidth - 2 * margin;
+    const galleryH = 118;
     doc.setDrawColor(209, 213, 219);
     doc.rect(galleryX, galleryY, galleryW, galleryH);
     const galleryUrls = quote.items
@@ -148,32 +167,35 @@ async function exportQuoteToPdf(quote) {
         .slice(0, 3);
     if (galleryUrls.length > 0) {
         const imageData = await Promise.all(galleryUrls.map((u) => loadImageDataUrl(u)));
-        let drawIndex = 0;
-        imageData.forEach((dataUrl) => {
-            if (!dataUrl)
-                return;
-            const x = galleryX + 10 + drawIndex * 92;
-            const yImg = galleryY + 9;
+        const loaded = imageData.filter((d) => Boolean(d));
+        const pad = 12;
+        const gap = 10;
+        const n = loaded.length;
+        const innerW = galleryW - 2 * pad;
+        const slotW = n > 0 ? (innerW - (n - 1) * gap) / n : innerW;
+        const imgH = Math.min(galleryH - 2 * pad, slotW * 0.72);
+        loaded.forEach((dataUrl, drawIndex) => {
+            const x = galleryX + pad + drawIndex * (slotW + gap);
+            const yImg = galleryY + pad + (galleryH - 2 * pad - imgH) / 2;
             const format = /^data:image\/jpe?g/i.test(dataUrl) ? "JPEG" : "PNG";
-            doc.addImage(dataUrl, format, x, yImg, 76, 64, undefined, "FAST");
-            drawIndex += 1;
+            doc.addImage(dataUrl, format, x, yImg, slotW, imgH, undefined, "FAST");
         });
-        if (drawIndex === 0) {
+        if (loaded.length === 0) {
             doc.setFontSize(10);
             doc.setTextColor(107, 114, 128);
-            doc.text("Product images unavailable", galleryX + 10, galleryY + 22);
+            doc.text("Product images unavailable", galleryX + pad, galleryY + galleryH / 2);
             doc.setTextColor(0, 0, 0);
         }
     }
     else {
         doc.setFontSize(10);
         doc.setTextColor(107, 114, 128);
-        doc.text("No product images", galleryX + 10, galleryY + 22);
+        doc.text("No product images", galleryX + 12, galleryY + galleryH / 2);
         doc.setTextColor(0, 0, 0);
     }
-    y += 14;
+    const tableStartY = galleryY + galleryH + 16;
     (0, jspdf_autotable_1.default)(doc, {
-        startY: y,
+        startY: tableStartY,
         margin: { left: 14, right: margin },
         head: [["Stock #", "Description", "Qty", "Unit Price", "Amount"]],
         body: quote.items.map((item) => [
@@ -207,7 +229,7 @@ async function exportQuoteToPdf(quote) {
             4: { cellWidth: 80, halign: "right" },
         },
     });
-    const tableEndY = (doc.lastAutoTable?.finalY ?? y) + 8;
+    const tableEndY = (doc.lastAutoTable?.finalY ?? tableStartY) + 8;
     const totalsXLabel = pageWidth - margin - 170;
     const totalsXValue = pageWidth - margin;
     let totalsY = tableEndY + 10;
