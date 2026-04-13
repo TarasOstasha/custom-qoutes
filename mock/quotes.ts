@@ -7,6 +7,7 @@ export interface QuoteItem {
   imageUrl?: string | null;
   name: string;
   description?: string | null;
+  chosenOptions?: string[] | null;
   qty: number;
   unitPrice: number;
   discountType: "none" | "amount" | "percent";

@@ -196,7 +196,7 @@ export default function QuoteBuilderPage() {
         loading: true,
         expanded: true,
         options: prev[item.id]?.options ?? [],
-        selected: prev[item.id]?.selected ?? [],
+        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
         error: null,
       },
     }));
@@ -208,7 +208,7 @@ export default function QuoteBuilderPage() {
         loading: false,
         expanded: true,
         options,
-        selected: prev[item.id]?.selected ?? [],
+        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
         error: options.length ? null : "No options found for this line item in the last cart scrape.",
       },
     }));
@@ -228,7 +228,7 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  const toggleOptionSelection = (itemId: string, option: string) => {
+  const toggleOptionSelection = (index: number, itemId: string, option: string) => {
     setLineItemOptions((prev) => {
       const current = prev[itemId];
       if (!current) return prev;
@@ -236,6 +236,21 @@ export default function QuoteBuilderPage() {
       const selected = alreadySelected
         ? current.selected.filter((entry) => entry !== option)
         : [...current.selected, option];
+
+      setQuote((q) => {
+        const items = [...q.items];
+        if (items[index]?.id !== itemId) return q;
+        items[index] = {
+          ...items[index],
+          chosenOptions: selected.length ? [...selected] : null,
+          updatedAt: new Date().toISOString(),
+        };
+        return {
+          ...q,
+          ...recalcQuote(items, { shippingTotal: q.shippingTotal, taxTotal: q.taxTotal }),
+        };
+      });
+
       return {
         ...prev,
         [itemId]: {
@@ -244,6 +259,20 @@ export default function QuoteBuilderPage() {
         },
       };
     });
+  };
+
+  const clearSelectedOptions = (index: number, itemId: string) => {
+    setLineItemOptions((prev) => ({
+      ...prev,
+      [itemId]: {
+        loading: false,
+        expanded: true,
+        options: prev[itemId]?.options ?? [],
+        selected: [],
+        error: prev[itemId]?.error ?? null,
+      },
+    }));
+    updateItem(index, { chosenOptions: null });
   };
 
   const splitDescriptionFields = (description: string | null | undefined): { primary: string; secondary: string } => {
@@ -275,7 +304,10 @@ export default function QuoteBuilderPage() {
     if (!selected.length) return;
     const primary = selected[0] ?? "";
     const secondary = selected.length > 1 ? selected.slice(1).join(" | ") : "";
-    updateItem(index, { description: mergeDescriptionFields(primary, secondary) || null });
+    updateItem(index, {
+      description: mergeDescriptionFields(primary, secondary) || null,
+      chosenOptions: null,
+    });
     setLineItemOptions((prev) => {
       const current = prev[item.id];
       if (!current) return prev;
@@ -880,7 +912,7 @@ export default function QuoteBuilderPage() {
                                 id={checkboxId}
                                 type="checkbox"
                                 checked={(lineItemOptions[item.id]?.selected ?? []).includes(option)}
-                                onChange={() => toggleOptionSelection(item.id, option)}
+                                onChange={() => toggleOptionSelection(index, item.id, option)}
                                 style={{ marginTop: 2, justifySelf: "center" }}
                               />
                               <span>{option}</span>
@@ -902,18 +934,7 @@ export default function QuoteBuilderPage() {
                             type="button"
                             className="btn"
                             style={{ padding: "4px 8px", fontSize: 12 }}
-                            onClick={() =>
-                              setLineItemOptions((prev) => ({
-                                ...prev,
-                                [item.id]: {
-                                  loading: false,
-                                  expanded: true,
-                                  options: prev[item.id]?.options ?? [],
-                                  selected: [],
-                                  error: prev[item.id]?.error ?? null,
-                                },
-                              }))
-                            }
+                            onClick={() => clearSelectedOptions(index, item.id)}
                             disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
                           >
                             Clear

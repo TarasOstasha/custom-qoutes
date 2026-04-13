@@ -1,4 +1,4 @@
-﻿import jsPDF from "jspdf";
+import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { apiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
@@ -11,6 +11,48 @@ function safeFilenamePart(s: string): string {
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+/**
+ * For `Label: Value` cart options, PDF shows only the value.
+ * Prefers `: ` so URLs like `https://...` are left unchanged.
+ */
+function optionValueForPdf(raw: string): string {
+  const t = raw.trim();
+  if (!t) return t;
+  if (/^https?:\/\//i.test(t)) return t;
+
+  const sp = t.indexOf(": ");
+  if (sp !== -1) {
+    const value = t.slice(sp + 2).trim();
+    return value || t;
+  }
+
+  const i = t.indexOf(":");
+  if (i === -1) return t;
+  const value = t.slice(i + 1).trim();
+  return value || t;
+}
+
+function formatLineDescription(item: {
+  name: string;
+  description?: string | null;
+  chosenOptions?: string[] | null;
+}): string {
+  const descPdf = item.description
+    ? String(item.description)
+        .split(/\r?\n/)
+        .map((line) => optionValueForPdf(line))
+        .join("\n")
+        .trim()
+    : "";
+  const base = [item.name, descPdf].filter(Boolean).join("\n");
+  const opts = (item.chosenOptions ?? [])
+    .map((o) => optionValueForPdf(o))
+    .filter(Boolean);
+  if (!opts.length) return base;
+  const optsBlock = ["Options:", ...opts.map((o) => `• ${o}`)].join("\n");
+  return base ? `${base}\n\n${optsBlock}` : optsBlock;
 }
 
 function arrayBufferToBase64(buf: ArrayBuffer): string {
@@ -266,7 +308,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     head: [["Stock #", "Description", "Qty", "Unit Price", "Amount"]],
     body: quote.items.map((item) => [
       item.sku || "—",
-      [item.name, item.description].filter(Boolean).join("\n"),
+      formatLineDescription(item),
       String(item.qty),
       money(item.unitPrice),
       money(item.lineTotal),

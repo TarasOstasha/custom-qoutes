@@ -7,6 +7,8 @@ export type QuoteItem = {
   imageUrl?: string | null;
   name: string;
   description?: string | null;
+  /** Cart/product options the user checked in the builder; included on PDF export. */
+  chosenOptions?: string[] | null;
   qty: number;
   unitPrice: number;
   discountType: "none" | "amount" | "percent";
