@@ -1,9 +1,13 @@
-import dotenv from "dotenv";
-dotenv.config();
 import express from "express";
 import quotesRouter from "./routes/quotes";
 import cors from "cors";
 import { openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
+
+if (process.env.NODE_ENV !== "production") {
+  try {
+    require("dotenv").config();
+  } catch {}
+}
 
 const app = express();
 const port = Number(process.env.PORT ?? 5000);

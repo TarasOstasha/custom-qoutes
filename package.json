@@ -50,19 +50,34 @@
     },
     "files": [
       "electron/**/*",
+      "dist-server/**/*",
       "package.json"
     ],
     "extraResources": [
       {
-        "from": ".",
-        "to": "app",
+        "from": ".next/standalone",
+        "to": "app/.next/standalone",
         "filter": [
-          ".next/standalone/**/*",
-          ".next/static/**/*",
-          "dist-server/**/*",
-          "public/**/*",
-          ".env"
+          "**/*"
         ]
+      },
+      {
+        "from": ".next/static",
+        "to": "app/.next/static",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "public",
+        "to": "app/public",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".env",
+        "to": "app/.env"
       }
     ],
     "win": {

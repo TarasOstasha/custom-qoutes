@@ -46,20 +46,27 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
       ) : (
         withImages.map((item) => (
           <div key={item.id} style={{ textAlign: "center", maxWidth: imgW + 24 }}>
-            <img
-              src={normalizeProductImageUrl(item.imageUrl) ?? ""}
-              alt=""
+            <a
+              href={`https://hxyrr-gdtbo.volusion.store/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`}
+              target="_blank"
+              rel="noreferrer"
               title={item.name}
-              style={{
-                width: imgW,
-                height: imgH,
-                objectFit: "contain",
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                background: "#fff",
-                display: "block",
-              }}
-            />
+              style={{ display: "inline-block" }}
+            >
+              <img
+                src={normalizeProductImageUrl(item.imageUrl) ?? ""}
+                alt=""
+                style={{
+                  width: imgW,
+                  height: imgH,
+                  objectFit: "contain",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                  background: "#fff",
+                  display: "block",
+                }}
+              />
+            </a>
             {!isPreview ? (
               <div
                 className="muted"

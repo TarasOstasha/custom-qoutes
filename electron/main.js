@@ -1,23 +1,15 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const fs = require("node:fs");
-const Module = require("module");
 const path = require("node:path");
 const http = require("node:http");
 
 const APP_URL = "http://localhost:3000";
 const API_URL = "http://localhost:5000";
 
-const projectRoot = path.resolve(__dirname, "..");
-const runtimeRoot = app.isPackaged ? path.join(process.resourcesPath, "app") : projectRoot;
-
-/** Extra resources (dist-server, .next) live under resources/app; node_modules stay in app.asar. */
-function ensureAsarNodeModulesOnPath() {
-  if (!app.isPackaged) return;
-  const asarNm = path.join(app.getAppPath(), "node_modules");
-  if (fs.existsSync(asarNm) && !Module.globalPaths.includes(asarNm)) {
-    Module.globalPaths.unshift(asarNm);
-  }
-}
+const isDev = !app.isPackaged;
+const devRoot = path.resolve(__dirname, "..");
+const prodAsarRoot = path.join(process.resourcesPath, "app.asar");
+const prodExtraRoot = path.join(process.resourcesPath, "app");
 
 function waitForHttp(url, timeoutMs = 90_000) {
   const startedAt = Date.now();
@@ -54,7 +46,9 @@ function startApiInProcess() {
   process.env.PORT = "5000";
   process.env.NEXT_PUBLIC_API_URL = API_URL;
   process.env.VOLUSION_PLAYWRIGHT_HEADLESS = "false";
-  const apiEntry = path.join(runtimeRoot, "dist-server", "server.js");
+  const apiEntry = isDev
+    ? path.join(__dirname, "..", "dist-server", "server.js")
+    : path.join(prodAsarRoot, "dist-server", "server.js");
   if (!fs.existsSync(apiEntry)) {
     throw new Error(`Missing API build output: ${apiEntry}`);
   }
@@ -65,7 +59,9 @@ function startWebInProcess() {
   process.env.PORT = "3000";
   process.env.HOSTNAME = "localhost";
   process.env.NEXT_PUBLIC_API_URL = API_URL;
-  const standaloneDir = path.join(runtimeRoot, ".next", "standalone");
+  const standaloneDir = isDev
+    ? path.join(devRoot, ".next", "standalone")
+    : path.join(prodExtraRoot, ".next", "standalone");
   const standaloneEntry = path.join(standaloneDir, "server.js");
   if (!fs.existsSync(standaloneEntry)) {
     throw new Error(
@@ -99,7 +95,6 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
-    ensureAsarNodeModulesOnPath();
     startApiInProcess();
     startWebInProcess();
     await waitForHttp(`${API_URL}/health`);
