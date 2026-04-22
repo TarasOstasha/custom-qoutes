@@ -154,8 +154,26 @@ export default function QuotePreviewPage() {
                             />
                           ) : null}
                           <div style={{ minWidth: 0 }}>
-                            <div>{item.name}</div>
-                            {item.description ? <div className="muted">{item.description}</div> : null}
+                            <div>
+                              {item.sku ? (
+                                <a
+                                  href={`https://hxyrr-gdtbo.volusion.store/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ color: "#111827", textDecoration: "none" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.color = "#2563eb";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.color = "#111827";
+                                  }}
+                                >
+                                  {item.description || item.name}
+                                </a>
+                              ) : (
+                                item.description || item.name
+                              )}
+                            </div>
                           </div>
                         </div>
                         <button
