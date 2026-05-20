@@ -8,8 +8,8 @@ import {
   type CartPayload,
 } from "../lib/extractCartFromPage";
 
-const DEFAULT_CART_URL = "https://hxyrr-gdtbo.volusion.store/ShoppingCart.asp";
-const STORE_HOME_URL = "https://hxyrr-gdtbo.volusion.store";
+const DEFAULT_CART_URL = "https://www.xyzdisplays.com/ShoppingCart.asp";
+const STORE_HOME_URL = "https://www.xyzdisplays.com/";
 
 export type ScrapeStorefrontCartOptions = {
   cartUrl?: string;

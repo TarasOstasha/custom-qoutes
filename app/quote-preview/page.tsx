@@ -157,7 +157,7 @@ export default function QuotePreviewPage() {
                             <div>
                               {item.sku ? (
                                 <a
-                                  href={`https://hxyrr-gdtbo.volusion.store/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku)}`}
+                                  href={`https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku)}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   style={{ color: "#111827", textDecoration: "none" }}

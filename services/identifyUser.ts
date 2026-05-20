@@ -1,7 +1,7 @@
 import { chromium, Page } from "playwright";
 
 const TARGET_URL =
-  "https://hxyrr-gdtbo.volusion.store/admin/TableViewer.asp?table=CartIDLog";
+  "https://www.xyzdisplays.com/admin/TableViewer.asp?table=CartIDLog";
 
 async function isLoginPage(page: Page): Promise<boolean> {
   const url = page.url().toLowerCase();

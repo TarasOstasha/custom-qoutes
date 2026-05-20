@@ -11,7 +11,7 @@ const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
  */
 async function extractCartPayloadInBrowser() {
     const DEFAULT_ID = "07387C5E1E344F7DB151AE80E9894EE7";
-    const ABSOLUTE_ASSET_BASE = "https://hxyrr-gdtbo.volusion.store";
+    const ABSOLUTE_ASSET_BASE = "https://www.xyzdisplays.com";
     /** Prefer last `$12.34` token so labels like "UPS 3 Day Select $252.45" do not concatenate stray digits. */
     function parseMoney(text) {
         const s = String(text ?? "");

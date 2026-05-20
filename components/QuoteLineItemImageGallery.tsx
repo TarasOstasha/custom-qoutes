@@ -47,7 +47,7 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
         withImages.map((item) => (
           <div key={item.id} style={{ textAlign: "center", maxWidth: imgW + 24 }}>
             <a
-              href={`https://hxyrr-gdtbo.volusion.store/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`}
+              href={`https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`}
               target="_blank"
               rel="noreferrer"
               title={item.name}

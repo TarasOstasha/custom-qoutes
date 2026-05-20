@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.identifyVolusionUser = identifyVolusionUser;
 const playwright_1 = require("playwright");
-const TARGET_URL = "https://hxyrr-gdtbo.volusion.store/admin/TableViewer.asp?table=CartIDLog";
+const TARGET_URL = "https://www.xyzdisplays.com/admin/TableViewer.asp?table=CartIDLog";
 async function isLoginPage(page) {
     const url = page.url().toLowerCase();
     if (url.includes("login"))
