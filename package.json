@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "build:api": "tsc -p tsconfig.server.json",
-    "build:prod": "npm run build && npm run build:api",
+    "copy:standalone-assets": "node scripts/copy-standalone-assets.js",
+    "build:prod": "npm run build && npm run copy:standalone-assets && npm run build:api",
     "start": "next start",
     "api:dev": "ts-node server.ts",
     "electron:start": "npm run build:prod && electron .",
@@ -48,32 +49,19 @@
     "directories": {
       "output": "dist-electron"
     },
+    "asar": false,
     "files": [
       "electron/**/*",
       "dist-server/**/*",
+      ".next/**/*",
+      "public/**/*",
       "package.json"
     ],
     "extraResources": [
       {
-        "from": ".next/standalone",
-        "to": "app/.next/standalone",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": ".next/static",
-        "to": "app/.next/static",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "public",
-        "to": "app/public",
-        "filter": [
-          "**/*"
-        ]
+        "from": "C:/Users/Tony Dev/AppData/Local/ms-playwright",
+        "to": "ms-playwright",
+        "filter": ["**/*"]
       },
       {
         "from": ".env",
