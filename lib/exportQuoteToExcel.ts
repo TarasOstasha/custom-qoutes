@@ -32,9 +32,7 @@ const HEADER_FILL: ExcelJS.Fill = {
 const MONEY_FMT = '"$"#,##0.00';
 
 function preferHighQualityImageUrl(url: string | null | undefined): string {
-  const normalized = normalizeProductImageUrl(url) ?? url ?? "";
-  // Force variant "-1" (higher-quality/default storefront image) before extension.
-  return normalized.replace(/-\d+(\.(?:jpe?g|png|gif|webp))(?=(?:\?|#|$))/gi, "-1$1");
+  return normalizeProductImageUrl(url) ?? url ?? "";
 }
 
 function applyBorderRange(ws: ExcelJS.Worksheet, r1: number, c1: number, r2: number, c2: number) {

@@ -1118,7 +1118,7 @@ export default function QuoteBuilderPage() {
           <div style={{ marginTop: 10, fontSize: 14, display: "none" }}>
             Identified Email: {identifiedEmail ?? "Not found"}
           </div>
-          {lastCartPayload ? (
+          {/* {lastCartPayload ? (
             <div style={{ marginTop: 6, fontSize: 12 }} className="muted">
               Last cart: {lastCartPayload.cartId} · {lastCartPayload.cartItems.length} item(s) · ship{" "}
               {currency(lastCartPayload.shippingTotal)}
@@ -1129,7 +1129,7 @@ export default function QuoteBuilderPage() {
               {lastCartPayload.taxDescription ? ` (${lastCartPayload.taxDescription})` : ""} · total{" "}
               {currency(lastCartPayload.grandTotal)}
             </div>
-          ) : null}
+          ) : null} */}
         </div>
 
         <div

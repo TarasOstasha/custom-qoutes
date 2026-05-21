@@ -1,3 +1,4 @@
+import { resolveVolusionProductImageUrl } from "../lib/normalizeProductImageUrl";
 import { QuoteItem } from "../mock/quotes";
 
 type CartItemInput = { productCode: string; qty: number };
@@ -50,19 +51,21 @@ function toNumber(value: string | number | undefined, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function toQuoteItem(product: VolusionProduct, qty: number, index: number): QuoteItem {
+async function toQuoteItem(product: VolusionProduct, qty: number, index: number): Promise<QuoteItem> {
   const now = new Date().toISOString();
   const unitPrice = toNumber(product.ProductPrice ?? product.Vendor_Price, 0);
   const safeQty = toNumber(qty, 0);
   const lineSubtotal = Number((safeQty * unitPrice).toFixed(2));
+  const productCode = product.ProductCode ?? product.Vendor_PartNo ?? "";
+  const imageUrl = await resolveVolusionProductImageUrl(productCode);
 
   return {
     id: `qi_cart_${Date.now()}_${index}`,
     quoteId: "",
     lineType: "product",
     sourceProductId: product.ProductID ?? null,
-    sku: product.ProductCode ?? product.Vendor_PartNo ?? null,
-    imageUrl: null,
+    sku: productCode || null,
+    imageUrl,
     name: product.ProductName ?? product.ProductCode ?? "Unknown Product",
     description: null,
     qty: safeQty,
@@ -101,7 +104,7 @@ export async function fetchCartProductsAsQuoteItems(
     cartItems.map(async (item, index) => {
       const product = await fetchOneProduct(item.productCode);
       if (!product) return null;
-      return toQuoteItem(product, item.qty, index);
+      return await toQuoteItem(product, item.qty, index);
     })
   );
 
