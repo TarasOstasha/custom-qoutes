@@ -8,6 +8,9 @@ const jspdf_1 = __importDefault(require("jspdf"));
 const jspdf_autotable_1 = __importDefault(require("jspdf-autotable"));
 const apiBase_1 = require("./apiBase");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
+const quoteDiscount_1 = require("./quoteDiscount");
+const shippingDestination_1 = require("./shippingDestination");
+const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
     const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
     return t || "quote";
@@ -272,8 +275,8 @@ async function exportQuoteToPdf(quote) {
         body: quote.items.map((item) => [
             item.sku || "—",
             formatLineDescription(item),
-            String(item.qty),
-            money(item.unitPrice),
+            (0, quoteDiscount_1.isQuoteDiscountLine)(item) ? "—" : String(item.qty),
+            (0, quoteDiscount_1.isQuoteDiscountLine)(item) ? (0, quoteDiscount_1.formatQuoteDiscountRate)(item) : money(item.unitPrice),
             money(item.lineTotal),
         ]),
         theme: "grid",
@@ -315,8 +318,12 @@ async function exportQuoteToPdf(quote) {
     drawTotal("Subtotal", quote.subtotal);
     if (quote.discountTotal > 0)
         drawTotal("Discounts", -quote.discountTotal);
-    drawTotal("Shipping", quote.shippingTotal);
-    drawTotal("Sales Tax", quote.taxTotal);
+    const shippingDest = (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip);
+    const shippingLabel = shippingDest
+        ? `Shipping to ${shippingDest.replace(/, /g, " ")}`
+        : "Shipping";
+    drawTotal(shippingLabel, quote.shippingTotal);
+    drawTotal((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal);
     drawTotal("TOTAL", quote.grandTotal, true);
     const notesY = totalsY + 12;
     doc.setDrawColor(209, 213, 219);

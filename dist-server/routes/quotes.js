@@ -1,37 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const recalcQuote_1 = require("../lib/recalcQuote");
 const quotes_1 = require("../mock/quotes");
 const volusion_1 = require("../services/volusion");
 const identifyUser_1 = require("../services/identifyUser");
 const scrapeStorefrontCart_1 = require("../services/scrapeStorefrontCart");
 const router = (0, express_1.Router)();
-function round2(n) {
-    return Math.round(n * 100) / 100;
-}
-function calcLine(item) {
-    const lineSubtotal = round2(item.qty * item.unitPrice);
-    let lineDiscountTotal = 0;
-    if (item.discountType === "amount") {
-        lineDiscountTotal = round2(item.discountValue);
-    }
-    else if (item.discountType === "percent") {
-        lineDiscountTotal = round2((lineSubtotal * item.discountValue) / 100);
-    }
-    lineDiscountTotal = Math.min(lineDiscountTotal, lineSubtotal);
-    const lineTotal = round2(lineSubtotal - lineDiscountTotal);
-    return { lineSubtotal, lineDiscountTotal, lineTotal };
-}
-function calcQuoteTotals(items) {
-    const nonShippingItems = items.filter((i) => i.name !== "Shipping");
-    const shippingItems = items.filter((i) => i.name === "Shipping");
-    const subtotal = round2(nonShippingItems.reduce((sum, i) => sum + i.lineSubtotal, 0));
-    const discountTotal = round2(nonShippingItems.reduce((sum, i) => sum + i.lineDiscountTotal, 0));
-    const shippingTotal = round2(shippingItems.reduce((sum, i) => sum + i.lineTotal, 0));
-    const taxTotal = 0;
-    const grandTotal = round2(subtotal - discountTotal + shippingTotal + taxTotal);
-    return { subtotal, discountTotal, shippingTotal, taxTotal, grandTotal };
-}
 router.get("/", (_req, res) => {
     res.json({ data: quotes_1.quotes });
 });
@@ -167,33 +142,19 @@ router.get("/:id", (req, res) => {
 });
 router.post("/", (req, res) => {
     const body = req.body;
-    const rawItems = Array.isArray(body.items) ? body.items : [];
-    const items = rawItems.map((item) => {
-        const qty = Number(item.qty ?? 0);
-        const unitPrice = Number(item.unitPrice ?? 0);
-        const discountType = item.discountType ?? "none";
-        const discountValue = Number(item.discountValue ?? 0);
-        const line = calcLine({ qty, unitPrice, discountType, discountValue });
-        return {
-            ...item,
-            qty,
-            unitPrice,
-            discountType,
-            discountValue,
-            lineSubtotal: line.lineSubtotal,
-            lineDiscountTotal: line.lineDiscountTotal,
-            lineTotal: line.lineTotal,
-        };
+    const rawItems = (Array.isArray(body.items) ? body.items : []);
+    const recalculated = (0, recalcQuote_1.recalcQuote)(rawItems, {
+        shippingTotal: Number(body.shippingTotal ?? 0),
+        taxTotal: Number(body.taxTotal ?? 0),
     });
-    const totals = calcQuoteTotals(items);
     const newQuote = {
         ...body,
-        items,
-        subtotal: totals.subtotal,
-        discountTotal: totals.discountTotal,
-        shippingTotal: totals.shippingTotal,
-        taxTotal: totals.taxTotal,
-        grandTotal: totals.grandTotal,
+        items: recalculated.items,
+        subtotal: recalculated.subtotal,
+        discountTotal: recalculated.discountTotal,
+        shippingTotal: recalculated.shippingTotal,
+        taxTotal: recalculated.taxTotal,
+        grandTotal: recalculated.grandTotal,
     };
     quotes_1.quotes.unshift(newQuote);
     res.status(201).json(newQuote);

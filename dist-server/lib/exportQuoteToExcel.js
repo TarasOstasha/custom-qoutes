@@ -7,6 +7,9 @@ exports.exportQuoteToExcel = exportQuoteToExcel;
 const exceljs_1 = __importDefault(require("exceljs"));
 const apiBase_1 = require("./apiBase");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
+const quoteDiscount_1 = require("./quoteDiscount");
+const shippingDestination_1 = require("./shippingDestination");
+const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
     const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
     return t || "quote";
@@ -28,9 +31,7 @@ const HEADER_FILL = {
 };
 const MONEY_FMT = '"$"#,##0.00';
 function preferHighQualityImageUrl(url) {
-    const normalized = (0, normalizeProductImageUrl_1.normalizeProductImageUrl)(url) ?? url ?? "";
-    // Force variant "-1" (higher-quality/default storefront image) before extension.
-    return normalized.replace(/-\d+(\.(?:jpe?g|png|gif|webp))(?=(?:\?|#|$))/gi, "-1$1");
+    return (0, normalizeProductImageUrl_1.normalizeProductImageUrl)(url) ?? url ?? "";
 }
 function applyBorderRange(ws, r1, c1, r2, c2) {
     for (let r = r1; r <= r2; r += 1) {
@@ -251,11 +252,17 @@ async function exportQuoteToExcel(quote) {
         r.getCell(1).alignment = { vertical: "top", horizontal: "left" };
         r.getCell(2).value = desc;
         r.getCell(2).alignment = { vertical: "top", horizontal: "left", wrapText: true, indent: 4 };
-        r.getCell(3).value = item.qty;
+        r.getCell(3).value = (0, quoteDiscount_1.isQuoteDiscountLine)(item) ? "—" : item.qty;
         r.getCell(3).alignment = { horizontal: "center", vertical: "top" };
-        r.getCell(4).value = item.unitPrice;
-        r.getCell(4).numFmt = MONEY_FMT;
-        r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+        if ((0, quoteDiscount_1.isQuoteDiscountLine)(item)) {
+            r.getCell(4).value = (0, quoteDiscount_1.formatQuoteDiscountRate)(item);
+            r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+        }
+        else {
+            r.getCell(4).value = item.unitPrice;
+            r.getCell(4).numFmt = MONEY_FMT;
+            r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+        }
         r.getCell(5).value = item.lineTotal;
         r.getCell(5).numFmt = MONEY_FMT;
         r.getCell(5).alignment = { horizontal: "right", vertical: "top" };
@@ -305,8 +312,12 @@ async function exportQuoteToExcel(quote) {
     if (quote.discountTotal > 0) {
         addTotalRow("Discounts", -quote.discountTotal);
     }
-    addTotalRow("Shipping", quote.shippingTotal, { textValue: quote.shippingLabel ?? null });
-    addTotalRow("Sales Tax", quote.taxTotal, { textValue: quote.taxLabel ?? null });
+    const shippingNote = (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip);
+    const shippingText = [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") || null;
+    addTotalRow("Shipping", quote.shippingTotal, { textValue: shippingText });
+    addTotalRow((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal, {
+        textValue: quote.taxLabel?.trim() || null,
+    });
     addTotalRow("TOTAL", quote.grandTotal, { bold: true, thickTop: true });
     row += 1;
     ws.mergeCells(`A${row}:E${row}`);

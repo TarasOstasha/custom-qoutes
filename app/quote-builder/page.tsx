@@ -27,6 +27,28 @@ function currency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
+function todayQuoteDate(): string {
+  return new Date().toLocaleDateString("en-US");
+}
+
+/** `quoteDate` is stored as en-US (e.g. `5/21/2026`); `<input type="date">` needs `YYYY-MM-DD`. */
+function quoteDateToInputValue(quoteDate: string): string {
+  const trimmed = quoteDate.trim();
+  const parsed = new Date(trimmed || todayQuoteDate());
+  if (Number.isNaN(parsed.getTime())) return "";
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function inputValueToQuoteDate(iso: string): string {
+  if (!iso) return todayQuoteDate();
+  const [y, m, d] = iso.split("-").map((v) => Number(v));
+  if (!y || !m || !d) return todayQuoteDate();
+  return new Date(y, m - 1, d).toLocaleDateString("en-US");
+}
+
 type LineItemOptionState = {
   loading: boolean;
   expanded: boolean;
@@ -702,7 +724,13 @@ export default function QuoteBuilderPage() {
           </div>
           <div>
             <label>Date</label>
-            <input value={quote.quoteDate} readOnly />
+            <input
+              type="date"
+              value={quoteDateToInputValue(quote.quoteDate)}
+              onChange={(e) =>
+                setQuote((prev) => ({ ...prev, quoteDate: inputValueToQuoteDate(e.target.value) }))
+              }
+            />
           </div>
           <div>
             <label>Status</label>

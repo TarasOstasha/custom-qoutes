@@ -450,6 +450,7 @@ async function extractCartPayloadInBrowser() {
     let shippingFromSelectedOption = false;
     // Volusion: tax row variants used in cart summary.
     const volTaxRow = document.querySelector("tr.v65-cart-tax-row, tr.v65-cart-tax-parent-row");
+    let taxDescription = "";
     if (volTaxRow) {
         const amt = volTaxRow.querySelector("td.v65-cart-tax-cell, .v65-cart-tax-value, #v65-cart-tax-cell") ??
             volTaxRow.querySelector("td:last-of-type");
@@ -457,6 +458,27 @@ async function extractCartPayloadInBrowser() {
         if (v > 0)
             taxTotal = v;
     }
+    function extractTaxDescription() {
+        const labelEl = document.querySelector(".v65-cart-taxtext-cell b");
+        if (labelEl) {
+            let text = normalizeText(labelEl.textContent ?? "");
+            text = text.replace(/:\s*$/, "").trim();
+            if (text)
+                return text;
+        }
+        if (volTaxRow) {
+            const fallback = volTaxRow.querySelector(".v65-cart-taxtext-cell b") ??
+                volTaxRow.querySelector(".v65-cart-taxtext-cell");
+            if (fallback) {
+                let text = normalizeText(fallback.textContent ?? "");
+                text = text.replace(/:\s*$/, "").trim();
+                if (text && /tax/i.test(text))
+                    return text;
+            }
+        }
+        return "";
+    }
+    taxDescription = extractTaxDescription();
     // Preferred shipping source: selected shipping method option text (e.g. "UPS Ground $97.23").
     const shippingSelect = document.querySelector('select[name="ShippingSpeedChoice"], select#ShippingSpeedChoice');
     if (shippingSelect) {
@@ -486,13 +508,20 @@ async function extractCartPayloadInBrowser() {
     }
     document.querySelectorAll("tr").forEach((tr) => {
         const txt = tr.textContent ?? "";
-        if (taxTotal === 0 && (/\bSales Tax\b/i.test(txt) || /\bNJ Sales Tax\b/i.test(txt))) {
-            const cells = tr.querySelectorAll("td");
-            const last = cells[cells.length - 1];
-            if (last) {
-                const v = parseMoney(last.textContent ?? "");
-                if (v > 0)
-                    taxTotal = v;
+        if (/\bSales Tax\b/i.test(txt)) {
+            if (!taxDescription) {
+                const stateMatch = txt.match(/\b([A-Z]{2})\s+Sales Tax\b/i);
+                if (stateMatch?.[1])
+                    taxDescription = `${stateMatch[1].toUpperCase()} Sales Tax`;
+            }
+            if (taxTotal === 0) {
+                const cells = tr.querySelectorAll("td");
+                const last = cells[cells.length - 1];
+                if (last) {
+                    const v = parseMoney(last.textContent ?? "");
+                    if (v > 0)
+                        taxTotal = v;
+                }
             }
         }
         // Strict shipping row detection to avoid matching "Calculate Shipping" widgets.
@@ -565,11 +594,52 @@ async function extractCartPayloadInBrowser() {
         const inferred = round2(grandTotal - itemsTotal - taxTotal);
         shippingTotal = inferred > 0 ? inferred : 0;
     }
+    function parseShippingDestination(text) {
+        const raw = normalizeText(text);
+        if (!raw)
+            return { state: "", zip: "" };
+        const zipMatch = raw.match(/\b(\d{5}(?:-\d{4})?)\b/);
+        const zip = zipMatch?.[1] ?? "";
+        let rest = raw;
+        if (zip)
+            rest = rest.replace(zip, "").replace(/[,\s]+$/, "").trim();
+        const parts = rest.split(",").map((p) => p.trim()).filter(Boolean);
+        let state = "";
+        for (let i = parts.length - 1; i >= 0; i -= 1) {
+            if (/^[A-Za-z]{2}$/.test(parts[i] ?? "")) {
+                state = (parts[i] ?? "").toUpperCase();
+                break;
+            }
+        }
+        return { state, zip };
+    }
+    function extractShippingDestination() {
+        const roots = [
+            document.querySelector("#v65-cart-shipping-details"),
+            document.querySelector("#v65-cart-shipping-details-wrapper #v65-cart-shipping-details"),
+            document.querySelector("#v65-cart-shipping-details-wrapper"),
+        ].filter((el) => Boolean(el));
+        for (const root of roots) {
+            for (const td of Array.from(root.querySelectorAll("td"))) {
+                const text = normalizeText(td.textContent ?? "");
+                if (!text || text.length > 120 || !/\b\d{5}(?:-\d{4})?\b/.test(text))
+                    continue;
+                const parsed = parseShippingDestination(text);
+                if (parsed.state || parsed.zip)
+                    return parsed;
+            }
+        }
+        return { state: "", zip: "" };
+    }
+    const { state: shippingState, zip: shippingZip } = extractShippingDestination();
     return {
         cartId,
         cartItems,
         shippingTotal,
+        ...(shippingState ? { shippingState } : {}),
+        ...(shippingZip ? { shippingZip } : {}),
         taxTotal,
+        ...(taxDescription ? { taxDescription } : {}),
         grandTotal,
     };
 }

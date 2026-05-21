@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchCartProductsAsQuoteItems = fetchCartProductsAsQuoteItems;
+const normalizeProductImageUrl_1 = require("../lib/normalizeProductImageUrl");
 function tagValue(block, tag) {
     const match = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "i"));
     return match?.[1]?.trim();
@@ -36,18 +37,20 @@ function toNumber(value, fallback = 0) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
 }
-function toQuoteItem(product, qty, index) {
+async function toQuoteItem(product, qty, index) {
     const now = new Date().toISOString();
     const unitPrice = toNumber(product.ProductPrice ?? product.Vendor_Price, 0);
     const safeQty = toNumber(qty, 0);
     const lineSubtotal = Number((safeQty * unitPrice).toFixed(2));
+    const productCode = product.ProductCode ?? product.Vendor_PartNo ?? "";
+    const imageUrl = await (0, normalizeProductImageUrl_1.resolveVolusionProductImageUrl)(productCode);
     return {
         id: `qi_cart_${Date.now()}_${index}`,
         quoteId: "",
         lineType: "product",
         sourceProductId: product.ProductID ?? null,
-        sku: product.ProductCode ?? product.Vendor_PartNo ?? null,
-        imageUrl: null,
+        sku: productCode || null,
+        imageUrl,
         name: product.ProductName ?? product.ProductCode ?? "Unknown Product",
         description: null,
         qty: safeQty,
@@ -82,7 +85,7 @@ async function fetchCartProductsAsQuoteItems(cartItems) {
         const product = await fetchOneProduct(item.productCode);
         if (!product)
             return null;
-        return toQuoteItem(product, item.qty, index);
+        return await toQuoteItem(product, item.qty, index);
     }));
     return results.filter((item) => item !== null);
 }
