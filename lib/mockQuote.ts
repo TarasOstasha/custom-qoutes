@@ -44,6 +44,8 @@ export type Quote = {
   taxLabel?: string | null;
   /** Raw cart tax label from `.v65-cart-taxtext-cell b` (replaces "Tax" in totals). */
   taxDescription?: string | null;
+  /** Cart / manual sales tax rate (e.g. 9.5). Tax $ is derived from this when set. */
+  taxRatePercent?: number | null;
   grandTotal: number;
   items: QuoteItem[];
   createdAt: string;
@@ -73,6 +75,7 @@ export const mockQuote: Quote = {
   taxTotal: 0,
   taxLabel: null,
   taxDescription: null,
+  taxRatePercent: null,
   grandTotal: 2738.82,
   createdAt: now,
   updatedAt: now,
@@ -165,6 +168,7 @@ export function createEmptyQuote(): Quote {
     taxTotal: 0,
     taxLabel: null,
     taxDescription: null,
+    taxRatePercent: null,
     grandTotal: 0,
     items: [],
     createdAt: t,

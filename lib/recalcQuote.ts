@@ -1,5 +1,6 @@
 import type { QuoteItem } from "./mockQuote";
 import { isQuoteDiscountLine, isShippingLine } from "./quoteDiscount";
+import { resolveTaxRatePercent, taxableBase } from "./taxLabel";
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -67,4 +68,44 @@ export function recalcQuote(
   const grandTotal = round2(subtotal - discountTotal + shippingTotal + taxTotal);
 
   return { items: mapped, subtotal, discountTotal, shippingTotal, taxTotal, grandTotal };
+}
+
+type TaxRateQuoteFields = {
+  shippingTotal: number;
+  taxTotal: number;
+  taxRatePercent?: number | null;
+  taxDescription?: string | null;
+};
+
+/**
+ * Recompute line totals; keep a fixed cart/manual tax % when set, otherwise preserve tax $.
+ */
+export function recalcQuotePreservingTaxRate(
+  prev: TaxRateQuoteFields,
+  items: QuoteItem[],
+  opts?: {
+    shippingTotal?: number;
+    /** When set, use this tax $ and do not derive from %. */
+    taxTotal?: number;
+    taxRatePercent?: number | null;
+  }
+) {
+  const shippingTotal = round2(opts?.shippingTotal ?? prev.shippingTotal);
+  const rate =
+    opts?.taxRatePercent !== undefined
+      ? opts.taxRatePercent
+      : resolveTaxRatePercent(prev);
+
+  let taxTotal: number;
+  if (opts?.taxTotal !== undefined) {
+    taxTotal = round2(opts.taxTotal);
+  } else if (rate != null && Number.isFinite(rate)) {
+    const partial = recalcQuote(items, { shippingTotal, taxTotal: 0 });
+    const base = taxableBase(partial.subtotal, partial.discountTotal, shippingTotal);
+    taxTotal = base > 0 ? round2((base * rate) / 100) : 0;
+  } else {
+    taxTotal = round2(prev.taxTotal);
+  }
+
+  return recalcQuote(items, { shippingTotal, taxTotal });
 }

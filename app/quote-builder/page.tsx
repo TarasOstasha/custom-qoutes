@@ -8,9 +8,14 @@ import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGa
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
-import { recalcQuote, round2 } from "../../lib/recalcQuote";
+import { recalcQuote, recalcQuotePreservingTaxRate, round2 } from "../../lib/recalcQuote";
 import { formatShippingDestination } from "../../lib/shippingDestination";
-import { formatTaxRowLabel } from "../../lib/taxLabel";
+import {
+  formatTaxRatePercentInput,
+  formatTaxRowLabel,
+  parseTaxRatePercentFromDescription,
+  resolveTaxRatePercent,
+} from "../../lib/taxLabel";
 import {
   clearQuoteDraft,
   loadQuoteFromPreviewStorage,
@@ -78,9 +83,9 @@ export default function QuoteBuilderPage() {
       const nextTaxTotal = field === "tax" ? (isNumeric ? round2(numeric) : 0) : prev.taxTotal;
       const nextLabel = trimmed.length > 0 && !isNumeric ? trimmed : null;
 
-      const recalculated = recalcQuote(prev.items, {
+      const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
         shippingTotal: nextShippingTotal,
-        taxTotal: nextTaxTotal,
+        ...(field === "tax" ? { taxTotal: nextTaxTotal } : {}),
       });
 
       return {
@@ -91,31 +96,22 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  /** Implied rate from tax $ ÷ (subtotal + shipping). */
-  const derivedTaxRatePercent = useMemo(() => {
-    const base = round2(Math.max(0, totals.subtotal - totals.discountTotal + totals.shippingTotal));
-    if (base <= 0) return "";
-    const pct = (quote.taxTotal / base) * 100;
-    if (!Number.isFinite(pct) || pct <= 0) return "";
-    return pct.toFixed(2);
-  }, [totals.subtotal, totals.discountTotal, totals.shippingTotal, quote.taxTotal]);
+  const cartTaxRatePercent = resolveTaxRatePercent(quote);
 
-  /**
-   * Draft string while the % field is focused. Without this, the value is re-derived from tax $
-   * on every keystroke, so typing "10" collapses to "1.00" after the first digit.
-   */
+  /** Draft while the % field is focused so partial values like "10" are not overwritten. */
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
-  const taxPercentDisplay = taxPercentDraft !== null ? taxPercentDraft : derivedTaxRatePercent;
+  const taxPercentDisplay =
+    taxPercentDraft !== null ? taxPercentDraft : formatTaxRatePercentInput(cartTaxRatePercent);
 
   const applyTaxPercentFromString = (raw: string) => {
     const trimmed = raw.trim();
     if (trimmed === "") {
       setQuote((prev) => {
-        const recalculated = recalcQuote(prev.items, {
-          shippingTotal: prev.shippingTotal,
+        const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
           taxTotal: 0,
+          taxRatePercent: null,
         });
-        return { ...prev, ...recalculated, taxLabel: null };
+        return { ...prev, ...recalculated, taxRatePercent: null, taxLabel: null };
       });
       return;
     }
@@ -123,15 +119,13 @@ export default function QuoteBuilderPage() {
     if (!Number.isFinite(numeric)) return;
 
     setQuote((prev) => {
-      const base = round2(Math.max(0, prev.subtotal - prev.discountTotal + prev.shippingTotal));
-      const nextTaxTotal = base > 0 ? round2((base * numeric) / 100) : 0;
-      const recalculated = recalcQuote(prev.items, {
-        shippingTotal: prev.shippingTotal,
-        taxTotal: nextTaxTotal,
+      const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
+        taxRatePercent: numeric,
       });
       return {
         ...prev,
         ...recalculated,
+        taxRatePercent: numeric,
         taxLabel: null,
       };
     });
@@ -145,7 +139,7 @@ export default function QuoteBuilderPage() {
       items[index] = { ...current, ...patch } as QuoteItem;
       return {
         ...prev,
-        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        ...recalcQuotePreservingTaxRate(prev, items),
       };
     });
   };
@@ -155,7 +149,7 @@ export default function QuoteBuilderPage() {
       const items = prev.items.filter((i) => i.id !== itemId);
       return {
         ...prev,
-        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        ...recalcQuotePreservingTaxRate(prev, items),
       };
     });
     setLineItemOptions((prev) => {
@@ -250,7 +244,7 @@ export default function QuoteBuilderPage() {
         };
         return {
           ...q,
-          ...recalcQuote(items, { shippingTotal: q.shippingTotal, taxTotal: q.taxTotal }),
+          ...recalcQuotePreservingTaxRate(q, items),
         };
       });
 
@@ -347,7 +341,7 @@ export default function QuoteBuilderPage() {
         items[index] = { ...items[index], imageUrl: result, updatedAt: new Date().toISOString() } as QuoteItem;
         return {
           ...prev,
-          ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+          ...recalcQuotePreservingTaxRate(prev, items),
         };
       });
       setCustomImageTargetId(null);
@@ -384,7 +378,7 @@ export default function QuoteBuilderPage() {
       const items = [...prev.items, newItem];
       return {
         ...prev,
-        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        ...recalcQuotePreservingTaxRate(prev, items),
       };
     });
   };
@@ -463,17 +457,27 @@ export default function QuoteBuilderPage() {
       } as QuoteItem;
     });
 
+    const taxDescription = payload.taxDescription?.trim() || null;
+    const parsedTaxRate = parseTaxRatePercentFromDescription(taxDescription);
+
     setQuote((prev) => {
       const items = [...prev.items, ...mappedItems];
+      const taxRatePercent = parsedTaxRate ?? prev.taxRatePercent ?? null;
       return {
         ...prev,
-        ...recalcQuote(items, {
-          shippingTotal: payload.shippingTotal ?? 0,
-          taxTotal: payload.taxTotal ?? 0,
-        }),
+        ...recalcQuotePreservingTaxRate(
+          { ...prev, taxRatePercent },
+          items,
+          {
+            shippingTotal: payload.shippingTotal ?? 0,
+            taxTotal: payload.taxTotal ?? 0,
+            taxRatePercent,
+          }
+        ),
         shippingState: payload.shippingState?.trim() || prev.shippingState || null,
         shippingZip: payload.shippingZip?.trim() || prev.shippingZip || null,
-        taxDescription: payload.taxDescription?.trim() || prev.taxDescription || null,
+        taxDescription: taxDescription || prev.taxDescription || null,
+        taxRatePercent,
       };
     });
   };
@@ -525,7 +529,7 @@ export default function QuoteBuilderPage() {
         const items = [...prev.items, ...mappedItems];
         return {
           ...prev,
-          ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+          ...recalcQuotePreservingTaxRate(prev, items),
         };
       });
     } finally {
@@ -1192,7 +1196,7 @@ export default function QuoteBuilderPage() {
                     type="text"
                     inputMode="decimal"
                     value={taxPercentDisplay}
-                    onFocus={() => setTaxPercentDraft(derivedTaxRatePercent)}
+                    onFocus={() => setTaxPercentDraft(formatTaxRatePercentInput(cartTaxRatePercent))}
                     onBlur={() => setTaxPercentDraft(null)}
                     onChange={(e) => {
                       const v = e.target.value;
