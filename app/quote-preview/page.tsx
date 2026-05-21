@@ -72,7 +72,7 @@ export default function QuotePreviewPage() {
           <div className="preview-company">
             <h1 style={{ margin: "0 0 6px", fontSize: 22 }}>Estimate</h1>
             <div>xyzDisplays</div>
-            <div>170 Cagnesbridge Rd, Bldg A7</div>
+            <div>170 Changebridge Rd, Bldg A7</div>
             <div>Montville, NJ 07045</div>
             <div>sales@xyzdisplays.com</div>
             <div>Phone: (973) 515-5151</div>

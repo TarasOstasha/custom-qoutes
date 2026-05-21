@@ -157,7 +157,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   let yLeft = logoDataUrl ? 78 : 34;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
-  doc.text("170 Cagnesbridge Rd, Bldg A7", margin, yLeft);
+  doc.text("170 Changebridge Rd, Bldg A7", margin, yLeft);
   yLeft += 14;
   doc.text("Montville, NJ 07045", margin, yLeft);
   yLeft += 14;

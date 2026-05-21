@@ -64,7 +64,7 @@ export const mockQuote: Quote = {
   customerCompany: "VOCO America, Inc.",
   customerEmail: "Melanie.Day@voco.com",
   customerPhone: "(973) 515-5151",
-  customerAddress: "170 Cagnesbridge Rd, Bldg A7\nMontville, NJ 07045",
+  customerAddress: "170 Changebridge Rd, Bldg A7\nMontville, NJ 07045",
   notes: "Estimate valid for 30 days",
   subtotal: 2992.5,
   discountTotal: 607.5,
