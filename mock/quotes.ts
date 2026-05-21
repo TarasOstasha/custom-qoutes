@@ -12,6 +12,7 @@ export interface QuoteItem {
   unitPrice: number;
   discountType: "none" | "amount" | "percent";
   discountValue: number;
+  discountScope?: "quote" | null;
   sortOrder: number;
   lineSubtotal: number;
   lineDiscountTotal: number;

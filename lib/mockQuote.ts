@@ -13,6 +13,8 @@ export type QuoteItem = {
   unitPrice: number;
   discountType: "none" | "amount" | "percent";
   discountValue: number;
+  /** `$` or `%` discount applied to quote merchandise subtotal (Add Discount lines). */
+  discountScope?: "quote" | null;
   sortOrder: number;
   lineSubtotal: number;
   lineDiscountTotal: number;
@@ -36,8 +38,12 @@ export type Quote = {
   discountTotal: number;
   shippingTotal: number;
   shippingLabel?: string | null;
+  shippingState?: string | null;
+  shippingZip?: string | null;
   taxTotal: number;
   taxLabel?: string | null;
+  /** Raw cart tax label from `.v65-cart-taxtext-cell b` (replaces "Tax" in totals). */
+  taxDescription?: string | null;
   grandTotal: number;
   items: QuoteItem[];
   createdAt: string;
@@ -62,8 +68,11 @@ export const mockQuote: Quote = {
   discountTotal: 607.5,
   shippingTotal: 346.32,
   shippingLabel: null,
+  shippingState: null,
+  shippingZip: null,
   taxTotal: 0,
   taxLabel: null,
+  taxDescription: null,
   grandTotal: 2738.82,
   createdAt: now,
   updatedAt: now,
@@ -151,8 +160,11 @@ export function createEmptyQuote(): Quote {
     discountTotal: 0,
     shippingTotal: 0,
     shippingLabel: null,
+    shippingState: null,
+    shippingZip: null,
     taxTotal: 0,
     taxLabel: null,
+    taxDescription: null,
     grandTotal: 0,
     items: [],
     createdAt: t,

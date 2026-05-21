@@ -7,7 +7,10 @@ import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFrom
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
+import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuote, round2 } from "../../lib/recalcQuote";
+import { formatShippingDestination } from "../../lib/shippingDestination";
+import { formatTaxRowLabel } from "../../lib/taxLabel";
 import {
   clearQuoteDraft,
   loadQuoteFromPreviewStorage,
@@ -90,12 +93,12 @@ export default function QuoteBuilderPage() {
 
   /** Implied rate from tax $ ÷ (subtotal + shipping). */
   const derivedTaxRatePercent = useMemo(() => {
-    const base = round2(Math.max(0, totals.subtotal + totals.shippingTotal));
+    const base = round2(Math.max(0, totals.subtotal - totals.discountTotal + totals.shippingTotal));
     if (base <= 0) return "";
     const pct = (quote.taxTotal / base) * 100;
     if (!Number.isFinite(pct) || pct <= 0) return "";
     return pct.toFixed(2);
-  }, [totals.subtotal, totals.shippingTotal, quote.taxTotal]);
+  }, [totals.subtotal, totals.discountTotal, totals.shippingTotal, quote.taxTotal]);
 
   /**
    * Draft string while the % field is focused. Without this, the value is re-derived from tax $
@@ -120,7 +123,7 @@ export default function QuoteBuilderPage() {
     if (!Number.isFinite(numeric)) return;
 
     setQuote((prev) => {
-      const base = round2(Math.max(0, prev.subtotal + prev.shippingTotal));
+      const base = round2(Math.max(0, prev.subtotal - prev.discountTotal + prev.shippingTotal));
       const nextTaxTotal = base > 0 ? round2((base * numeric) / 100) : 0;
       const recalculated = recalcQuote(prev.items, {
         shippingTotal: prev.shippingTotal,
@@ -352,8 +355,9 @@ export default function QuoteBuilderPage() {
     reader.readAsDataURL(file);
   };
 
-  const addCustomItem = () => {
+  const appendCustomLine = (preset: "item" | "discount" = "item") => {
     const now = new Date().toISOString();
+    const isDiscount = preset === "discount";
     const newItem: QuoteItem = {
       id: `qi_${Date.now()}`,
       quoteId: quote.id,
@@ -361,12 +365,13 @@ export default function QuoteBuilderPage() {
       sourceProductId: null,
       sku: null,
       imageUrl: null,
-      name: "Custom Item",
-      description: "Editable custom line",
+      name: isDiscount ? "Discount" : "Custom Item",
+      description: isDiscount ? "Quote discount" : "Editable custom line",
       qty: 1,
       unitPrice: 0,
-      discountType: "none",
+      discountType: isDiscount ? "amount" : "none",
       discountValue: 0,
+      discountScope: isDiscount ? "quote" : null,
       sortOrder: quote.items.length + 1,
       lineSubtotal: 0,
       lineDiscountTotal: 0,
@@ -383,6 +388,9 @@ export default function QuoteBuilderPage() {
       };
     });
   };
+
+  const addCustomItem = () => appendCustomLine("item");
+  const addDiscountLine = () => appendCustomLine("discount");
 
   const appendScrapedCartPayload = (payload: CartPayload) => {
     const cartItems = payload.cartItems;
@@ -463,6 +471,9 @@ export default function QuoteBuilderPage() {
           shippingTotal: payload.shippingTotal ?? 0,
           taxTotal: payload.taxTotal ?? 0,
         }),
+        shippingState: payload.shippingState?.trim() || prev.shippingState || null,
+        shippingZip: payload.shippingZip?.trim() || prev.shippingZip || null,
+        taxDescription: payload.taxDescription?.trim() || prev.taxDescription || null,
       };
     });
   };
@@ -529,7 +540,15 @@ export default function QuoteBuilderPage() {
       const payload = await extractCartFromPage();
       console.log(payload);
       setLastCartPayload(payload);
-      if (!payload.cartItems.length && !payload.shippingTotal && !payload.taxTotal) return;
+      if (
+        !payload.cartItems.length &&
+        !payload.shippingTotal &&
+        !payload.taxTotal &&
+        !payload.shippingState &&
+        !payload.shippingZip
+      ) {
+        return;
+      }
       appendScrapedCartPayload(payload);
     } finally {
       setCopyCartLoading(false);
@@ -570,7 +589,15 @@ export default function QuoteBuilderPage() {
         return;
       }
       setLastCartPayload(data);
-      if (!data.cartItems?.length && !data.shippingTotal && !data.taxTotal) return;
+      if (
+        !data.cartItems?.length &&
+        !data.shippingTotal &&
+        !data.taxTotal &&
+        !data.shippingState &&
+        !data.shippingZip
+      ) {
+        return;
+      }
       appendScrapedCartPayload(data);
     } finally {
       setScrapeCartServerLoading(false);
@@ -785,7 +812,7 @@ export default function QuoteBuilderPage() {
                             : "Get Options"}
                       </button>
                     ) : null}
-                    {item.lineType === "custom" ? (
+                    {item.lineType === "custom" && !isQuoteDiscountLine(item) ? (
                       <button
                         type="button"
                         className="btn"
@@ -844,23 +871,70 @@ export default function QuoteBuilderPage() {
                       </button>
                     </div>
                   </td>
-                  <td>
-                    <input
-                      type="number"
-                      value={item.qty}
-                      onChange={(e) => updateItem(index, { qty: Number(e.target.value) })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      step={item.lineType === "custom" ? "any" : undefined}
-                      value={item.unitPrice}
-                      onChange={(e) =>
-                        updateItem(index, { unitPrice: Number(e.target.value) })
-                      }
-                    />
-                  </td>
+                  {isQuoteDiscountLine(item) ? (
+                    <>
+                      <td>
+                        <select
+                          value={item.discountType === "percent" ? "percent" : "amount"}
+                          onChange={(e) =>
+                            updateItem(index, {
+                              discountType: e.target.value === "percent" ? "percent" : "amount",
+                            })
+                          }
+                          style={{ width: "100%" }}
+                        >
+                          <option value="amount">$ Amount</option>
+                          <option value="percent">% Off</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          step={item.discountType === "percent" ? "0.01" : "any"}
+                          value={item.discountValue}
+                          placeholder={item.discountType === "percent" ? "e.g. 10" : "e.g. 50"}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            updateItem(index, { discountValue: Number.isFinite(n) ? Math.max(0, n) : 0 });
+                          }}
+                        />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>
+                        <input
+                          type="number"
+                          step={item.lineType === "custom" ? "any" : 1}
+                          min={item.lineType === "custom" ? undefined : 1}
+                          value={item.qty}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            updateItem(index, { qty: Number.isFinite(n) ? n : 0 });
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step={item.lineType === "custom" ? "any" : undefined}
+                          min={item.lineType === "custom" ? undefined : 0}
+                          value={item.unitPrice}
+                          placeholder={item.lineType === "custom" ? "e.g. -50 for credit" : undefined}
+                          title={
+                            item.lineType === "custom"
+                              ? "Negative unit price or qty reduces the quote total (credit line)"
+                              : undefined
+                          }
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            updateItem(index, { unitPrice: Number.isFinite(n) ? n : 0 });
+                          }}
+                        />
+                      </td>
+                    </>
+                  )}
                   <td className="right">{currency(item.lineTotal)}</td>
                 </tr>
                 {item.lineType !== "custom" && lineItemOptions[item.id]?.expanded ? (
@@ -960,6 +1034,9 @@ export default function QuoteBuilderPage() {
             <button className="btn" onClick={addCustomItem}>
               Add Custom Item
             </button>
+            <button className="btn" type="button" onClick={addDiscountLine}>
+              Add Discount
+            </button>
             {/* <button className="btn" onClick={addVolusionProducts} disabled={addVolusionLoading}>
               {addVolusionLoading ? "Adding Volusion..." : "Add Volusion Products"}
             </button> */}
@@ -1043,14 +1120,28 @@ export default function QuoteBuilderPage() {
           </div>
           {lastCartPayload ? (
             <div style={{ marginTop: 6, fontSize: 12 }} className="muted">
-              Last cart: {lastCartPayload.cartId} · {lastCartPayload.cartItems.length} item(s) · tax{" "}
-              {currency(lastCartPayload.taxTotal)} · total {currency(lastCartPayload.grandTotal)}
+              Last cart: {lastCartPayload.cartId} · {lastCartPayload.cartItems.length} item(s) · ship{" "}
+              {currency(lastCartPayload.shippingTotal)}
+              {lastCartPayload.shippingState || lastCartPayload.shippingZip
+                ? ` · ${[lastCartPayload.shippingState, lastCartPayload.shippingZip].filter(Boolean).join(", ")}`
+                : ""}{" "}
+              · tax {currency(lastCartPayload.taxTotal)}
+              {lastCartPayload.taxDescription ? ` (${lastCartPayload.taxDescription})` : ""} · total{" "}
+              {currency(lastCartPayload.grandTotal)}
             </div>
           ) : null}
         </div>
 
-        <div className="section" style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
-          <div>
+        <div
+          className="section"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 420px",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          <div style={{ maxWidth: 480, minWidth: 0 }}>
             <label htmlFor="quote-notes-builder">Notes</label>
             <textarea
               id="quote-notes-builder"
@@ -1076,16 +1167,25 @@ export default function QuoteBuilderPage() {
               <span>{currency(totals.subtotal)}</span>
             </div>
             <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Shipping</span>
+              <span>
+                Shipping
+                {formatShippingDestination(quote.shippingState, quote.shippingZip) ? (
+                  <span className="muted" style={{ marginLeft: 8, fontWeight: 400 }}>
+                    {formatShippingDestination(quote.shippingState, quote.shippingZip)}
+                  </span>
+                ) : null}
+              </span>
               <input
                 value={quote.shippingLabel ?? String(totals.shippingTotal)}
                 onChange={(e) => applyChargeInput("shipping", e.target.value)}
-                placeholder="e.g. 25 or TBD"
+                placeholder="e.g. 72.36 or TBD"
                 style={{ maxWidth: 120, textAlign: "right" }}
               />
             </div>
-            <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Tax</span>
+            <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+                {formatTaxRowLabel(quote.taxDescription, quote.shippingState)}
+              </span>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <input

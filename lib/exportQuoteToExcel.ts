@@ -2,6 +2,9 @@ import ExcelJS from "exceljs";
 import { apiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
+import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
+import { formatShippingDestination } from "./shippingDestination";
+import { formatTaxRowLabel } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
   const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -270,11 +273,16 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
     r.getCell(1).alignment = { vertical: "top", horizontal: "left" };
     r.getCell(2).value = desc;
     r.getCell(2).alignment = { vertical: "top", horizontal: "left", wrapText: true, indent: 4 };
-    r.getCell(3).value = item.qty;
+    r.getCell(3).value = isQuoteDiscountLine(item) ? "—" : item.qty;
     r.getCell(3).alignment = { horizontal: "center", vertical: "top" };
-    r.getCell(4).value = item.unitPrice;
-    r.getCell(4).numFmt = MONEY_FMT;
-    r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+    if (isQuoteDiscountLine(item)) {
+      r.getCell(4).value = formatQuoteDiscountRate(item);
+      r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+    } else {
+      r.getCell(4).value = item.unitPrice;
+      r.getCell(4).numFmt = MONEY_FMT;
+      r.getCell(4).alignment = { horizontal: "right", vertical: "top" };
+    }
     r.getCell(5).value = item.lineTotal;
     r.getCell(5).numFmt = MONEY_FMT;
     r.getCell(5).alignment = { horizontal: "right", vertical: "top" };
@@ -331,8 +339,12 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   if (quote.discountTotal > 0) {
     addTotalRow("Discounts", -quote.discountTotal);
   }
-  addTotalRow("Shipping", quote.shippingTotal, { textValue: quote.shippingLabel ?? null });
-  addTotalRow("Sales Tax", quote.taxTotal, { textValue: quote.taxLabel ?? null });
+  const shippingNote = formatShippingDestination(quote.shippingState, quote.shippingZip);
+  const shippingText = [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") || null;
+  addTotalRow("Shipping", quote.shippingTotal, { textValue: shippingText });
+  addTotalRow(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal, {
+    textValue: quote.taxLabel?.trim() || null,
+  });
   addTotalRow("TOTAL", quote.grandTotal, { bold: true, thickTop: true });
 
   row += 1;

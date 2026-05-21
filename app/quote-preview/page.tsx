@@ -6,7 +6,10 @@ import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
+import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuote } from "../../lib/recalcQuote";
+import { formatShippingDestination } from "../../lib/shippingDestination";
+import { formatTaxRowLabel } from "../../lib/taxLabel";
 import { clearQuoteDraft, loadQuoteFromPreviewStorage, saveQuoteDraft } from "../../lib/quotePreviewStorage";
 
 function money(value: number): string {
@@ -187,8 +190,10 @@ export default function QuotePreviewPage() {
                         </button>
                       </div>
                     </td>
-                    <td className="right">{item.qty}</td>
-                    <td className="right">{money(item.unitPrice)}</td>
+                    <td className="right">{isQuoteDiscountLine(item) ? "—" : item.qty}</td>
+                    <td className="right">
+                      {isQuoteDiscountLine(item) ? formatQuoteDiscountRate(item) : money(item.unitPrice)}
+                    </td>
                     <td className="right">{money(item.lineTotal)}</td>
                   </tr>
                 ))
@@ -210,12 +215,17 @@ export default function QuotePreviewPage() {
               <tr>
                 <td colSpan={4} className="right">
                   Shipping
+                  {formatShippingDestination(quote.shippingState, quote.shippingZip) ? (
+                    <span className="muted" style={{ marginLeft: 8, fontWeight: 400 }}>
+                      {formatShippingDestination(quote.shippingState, quote.shippingZip)}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="right">{quote.shippingLabel?.trim() ? quote.shippingLabel : money(quote.shippingTotal)}</td>
               </tr>
               <tr>
                 <td colSpan={4} className="right">
-                  Sales Tax
+                  {formatTaxRowLabel(quote.taxDescription, quote.shippingState)}
                 </td>
                 <td className="right">{quote.taxLabel?.trim() ? quote.taxLabel : money(quote.taxTotal)}</td>
               </tr>

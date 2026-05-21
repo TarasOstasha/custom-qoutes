@@ -3,6 +3,9 @@ import autoTable from "jspdf-autotable";
 import { apiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
+import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
+import { formatShippingDestination } from "./shippingDestination";
+import { formatTaxRowLabel } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
   const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -309,8 +312,8 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     body: quote.items.map((item) => [
       item.sku || "—",
       formatLineDescription(item),
-      String(item.qty),
-      money(item.unitPrice),
+      isQuoteDiscountLine(item) ? "—" : String(item.qty),
+      isQuoteDiscountLine(item) ? formatQuoteDiscountRate(item) : money(item.unitPrice),
       money(item.lineTotal),
     ]),
     theme: "grid",
@@ -354,8 +357,12 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   };
   drawTotal("Subtotal", quote.subtotal);
   if (quote.discountTotal > 0) drawTotal("Discounts", -quote.discountTotal);
-  drawTotal("Shipping", quote.shippingTotal);
-  drawTotal("Sales Tax", quote.taxTotal);
+  const shippingDest = formatShippingDestination(quote.shippingState, quote.shippingZip);
+  const shippingLabel = shippingDest
+    ? `Shipping to ${shippingDest.replace(/, /g, " ")}`
+    : "Shipping";
+  drawTotal(shippingLabel, quote.shippingTotal);
+  drawTotal(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal);
   drawTotal("TOTAL", quote.grandTotal, true);
 
   const notesY = totalsY + 12;
