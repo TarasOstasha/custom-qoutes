@@ -2,6 +2,7 @@ import express from "express";
 import quotesRouter from "./routes/quotes";
 import cors from "cors";
 import { openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
+import { sequelize } from "./lib/models";
 
 if (process.env.NODE_ENV !== "production") {
   try {
@@ -20,6 +21,15 @@ app.use(cors(corsOPtions));
 
 app.use(express.json());
 
+sequelize
+  .authenticate()
+  .then(() => {
+    console.log("Connected to PostgreSQL via Sequelize");
+  })
+  .catch((error: unknown) => {
+    console.error("Failed to connect to PostgreSQL:", error);
+  });
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -34,6 +44,7 @@ app.post("/api/cart/open-session", async (_req, res) => {
   }
 });
 
+app.use("/api/quotes", quotesRouter);
 app.use("/quotes", quotesRouter);
 
 app.listen(port, () => {

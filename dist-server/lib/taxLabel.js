@@ -23,7 +23,7 @@ function parseTaxRatePercentFromDescription(taxDescription) {
 function formatTaxRatePercentInput(rate) {
     if (rate == null || !Number.isFinite(rate) || rate <= 0)
         return "";
-    return String(rate);
+    return String(Number(rate.toFixed(3)));
 }
 function resolveTaxRatePercent(quote) {
     if (quote.taxRatePercent != null && Number.isFinite(quote.taxRatePercent) && quote.taxRatePercent > 0) {

@@ -46,8 +46,13 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
       ) : (
         withImages.map((item) => (
           <div key={item.id} style={{ textAlign: "center", maxWidth: imgW + 24 }}>
+            {(() => {
+              const imageHref = normalizeProductImageUrl(item.imageUrl);
+              const fallbackHref = `https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`;
+              const href = imageHref ?? fallbackHref;
+              return (
             <a
-              href={`https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`}
+              href={href}
               target="_blank"
               rel="noreferrer"
               title={item.name}
@@ -67,6 +72,8 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
                 }}
               />
             </a>
+              );
+            })()}
             {!isPreview ? (
               <div
                 className="muted"

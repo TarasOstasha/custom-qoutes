@@ -21,7 +21,8 @@
     "routes/**/*.ts",
     "services/**/*.ts",
     "mock/**/*.ts",
-    "lib/**/*.ts"
+    "lib/**/*.ts",
+    "models/**/*.ts"
   ],
   "exclude": ["node_modules", ".next", "dist-electron", "dist-server"]
 }

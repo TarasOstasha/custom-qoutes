@@ -17,7 +17,7 @@ export function parseTaxRatePercentFromDescription(
 
 export function formatTaxRatePercentInput(rate: number | null | undefined): string {
   if (rate == null || !Number.isFinite(rate) || rate <= 0) return "";
-  return String(rate);
+  return String(Number(rate.toFixed(3)));
 }
 
 export function resolveTaxRatePercent(quote: {

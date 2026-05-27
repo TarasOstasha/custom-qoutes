@@ -58,6 +58,55 @@ type LineItemOptionState = {
 };
 
 const DESC_SECONDARY_SEPARATOR = " || ";
+type QuoteSearchResult = {
+  id: string;
+  quoteNumber: string;
+  quoteDate: string | null;
+  customerName: string | null;
+  company: string | null;
+  email: string | null;
+  total: string | number | null;
+  status: string;
+};
+
+type ApiQuoteItem = {
+  id: string;
+  quoteId: string;
+  productCode: string | null;
+  description: string | null;
+  optionalDescription: string | null;
+  qty: number | string | null;
+  unitPrice: number | string | null;
+  amount: number | string | null;
+  optionsJson?: { chosen_options?: string[]; image_url?: string } | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ApiQuote = {
+  id: string;
+  quoteNumber: string;
+  quoteDate: string | null;
+  status: string;
+  version: number;
+  customerName: string | null;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  subtotal: number | string | null;
+  shipping: number | string | null;
+  taxRate: number | string | null;
+  taxAmount: number | string | null;
+  total: number | string | null;
+  items?: ApiQuoteItem[];
+};
+
+const asNumber = (value: string | number | null | undefined): number => {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
 
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
@@ -86,6 +135,14 @@ export default function QuoteBuilderPage() {
   const [openCartSessionLoading, setOpenCartSessionLoading] = useState(false);
   const [addVolusionLoading, setAddVolusionLoading] = useState(false);
   const [scrapeCartServerLoading, setScrapeCartServerLoading] = useState(false);
+  const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
+  const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
+  const [saveQuoteError, setSaveQuoteError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<QuoteSearchResult[]>([]);
+  const [loadQuoteLoadingId, setLoadQuoteLoadingId] = useState<string | null>(null);
   const [liveSessionUrl, setLiveSessionUrl] = useState<string | null>(null);
   const [lastCartPayload, setLastCartPayload] = useState<CartPayload | null>(null);
   const [lineItemOptions, setLineItemOptions] = useState<Record<string, LineItemOptionState>>({});
@@ -655,6 +712,216 @@ export default function QuoteBuilderPage() {
     }
   };
 
+  const saveQuote = async () => {
+    setSaveQuoteLoading(true);
+    setSaveQuoteSuccess(null);
+    setSaveQuoteError(null);
+    try {
+      const payload = {
+        quote_number: quote.quoteNumber,
+        quote_date: quoteDateToInputValue(quote.quoteDate),
+        status: quote.status,
+        version: quote.version,
+        customer_name: quote.customerName ?? null,
+        company: quote.customerCompany ?? null,
+        email: quote.customerEmail ?? null,
+        phone: quote.customerPhone ?? null,
+        address: quote.customerAddress ?? null,
+        notes: quote.notes ?? null,
+        subtotal: Number(totals.subtotal),
+        shipping: Number(totals.shippingTotal),
+        tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
+        tax_amount: Number(totals.taxTotal),
+        total: Number(totals.grandTotal),
+        items: quote.items.map((item) => ({
+          product_code: item.sku ?? item.sourceProductId ?? null,
+          description: item.name ?? null,
+          optional_description: item.description ?? null,
+          image_url: item.imageUrl || null,
+          qty: Number(item.qty),
+          unit_price: Number(item.unitPrice),
+          amount: Number(item.lineTotal),
+          options_json:
+            item.chosenOptions?.length || item.imageUrl
+              ? {
+                  ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+                  ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+                }
+              : null,
+        })),
+      };
+
+      console.log("Save quote payload:", payload);
+      const response = await fetch(`${apiBase}/api/quotes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      const isJson = contentType.includes("application/json");
+      const parsedBody = isJson
+        ? ((await response.json()) as { id?: string; error?: string; message?: string })
+        : await response.text();
+      console.log("Save quote response:", parsedBody);
+
+      if (!response.ok) {
+        if (isJson) {
+          const data = parsedBody as { error?: string; message?: string };
+          throw new Error(data?.error ?? data?.message ?? `Failed to save quote (${response.status})`);
+        }
+        const text = String(parsedBody).trim();
+        throw new Error(
+          text
+            ? `Failed to save quote (${response.status}): ${text.slice(0, 300)}`
+            : `Failed to save quote (${response.status})`,
+        );
+      }
+      setSaveQuoteSuccess(`Quote ${quote.quoteNumber} saved.`);
+    } catch (error) {
+      console.error("Save quote failed:", error);
+      setSaveQuoteError(error instanceof Error ? error.message : "Failed to save quote");
+    } finally {
+      setSaveQuoteLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const response = await fetch(`${apiBase}/api/quotes/search?q=${encodeURIComponent(q)}`);
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        const isJson = contentType.includes("application/json");
+        const parsedBody = isJson
+          ? ((await response.json()) as { data?: QuoteSearchResult[]; error?: string; message?: string })
+          : await response.text();
+
+        if (!response.ok) {
+          if (isJson) {
+            const data = parsedBody as { error?: string; message?: string };
+            throw new Error(data?.error ?? data?.message ?? "Failed to search quotes");
+          }
+          throw new Error(String(parsedBody || "Failed to search quotes"));
+        }
+
+        const data = parsedBody as { data?: QuoteSearchResult[] };
+        setSearchResults(Array.isArray(data.data) ? data.data : []);
+      } catch (error) {
+        setSearchError(error instanceof Error ? error.message : "Failed to search quotes");
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const loadQuoteById = async (quoteId: string) => {
+    setLoadQuoteLoadingId(quoteId);
+    setSaveQuoteSuccess(null);
+    setSaveQuoteError(null);
+    try {
+      const response = await fetch(`${apiBase}/api/quotes/${encodeURIComponent(quoteId)}`);
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      const isJson = contentType.includes("application/json");
+      const parsedBody = isJson
+        ? ((await response.json()) as ApiQuote & { error?: string; message?: string })
+        : await response.text();
+
+      if (!response.ok) {
+        if (isJson) {
+          const data = parsedBody as { error?: string; message?: string };
+          throw new Error(data?.error ?? data?.message ?? `Failed to load quote (${response.status})`);
+        }
+        throw new Error(`Failed to load quote (${response.status}): ${String(parsedBody).slice(0, 300)}`);
+      }
+
+      const data = parsedBody as ApiQuote;
+      const now = new Date().toISOString();
+      const items = (Array.isArray(data.items) ? data.items : []).map((item, index) => {
+        const qty = asNumber(item.qty) || 1;
+        const unitPrice = asNumber(item.unitPrice);
+        const amount = asNumber(item.amount);
+        const calculatedAmount = amount || round2(qty * unitPrice);
+        const productCode = item.productCode ?? null;
+        const imageFromOptions = item.optionsJson?.image_url ?? null;
+        return {
+          id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
+          quoteId: data.id,
+          lineType: productCode ? "product" : "custom",
+          sourceProductId: productCode,
+          sku: productCode,
+          imageUrl: imageFromOptions,
+          name: item.description ?? productCode ?? "Line Item",
+          description: item.optionalDescription ?? null,
+          chosenOptions: item.optionsJson?.chosen_options ?? null,
+          qty,
+          unitPrice,
+          discountType: "none",
+          discountValue: 0,
+          discountScope: null,
+          sortOrder: index + 1,
+          lineSubtotal: calculatedAmount,
+          lineDiscountTotal: 0,
+          lineTotal: calculatedAmount,
+          createdAt: item.createdAt ?? now,
+          updatedAt: item.updatedAt ?? now,
+        } as QuoteItem;
+      });
+
+      const draft: Quote = {
+        id: data.id,
+        quoteNumber: data.quoteNumber ?? "",
+        status: data.status === "final" ? "final" : "draft",
+        version: asNumber(data.version) || 1,
+        customerName: data.customerName ?? null,
+        customerCompany: data.company ?? null,
+        customerEmail: data.email ?? null,
+        customerPhone: data.phone ?? null,
+        customerAddress: data.address ?? null,
+        notes: data.notes ?? null,
+        subtotal: 0,
+        discountTotal: 0,
+        shippingTotal: asNumber(data.shipping),
+        shippingLabel: null,
+        shippingState: null,
+        shippingZip: null,
+        taxTotal: asNumber(data.taxAmount),
+        taxLabel: null,
+        taxDescription: null,
+        taxRatePercent: data.taxRate != null ? asNumber(data.taxRate) * 100 : null,
+        grandTotal: 0,
+        items,
+        createdAt: now,
+        updatedAt: now,
+        quoteDate: data.quoteDate ? new Date(data.quoteDate).toLocaleDateString("en-US") : todayQuoteDate(),
+      };
+
+      const recalculated = recalcQuotePreservingTaxRate(draft, items, {
+        shippingTotal: draft.shippingTotal,
+        taxTotal: draft.taxTotal,
+      });
+      setQuote({ ...draft, ...recalculated });
+      setLineItemOptions({});
+      setSearchQuery("");
+      setSearchResults([]);
+    } catch (error) {
+      setSaveQuoteError(error instanceof Error ? error.message : "Failed to load quote");
+    } finally {
+      setLoadQuoteLoadingId(null);
+    }
+  };
+
   return (
     <main className="container">
       <style
@@ -710,6 +977,64 @@ export default function QuoteBuilderPage() {
               Preview Quote
             </Link>
           </div>
+        </div>
+        <div style={{ marginTop: 12, maxWidth: 560, position: "relative" }}>
+          <label htmlFor="quote-search">Search Saved Quotes</label>
+          <input
+            id="quote-search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by quote #, customer, company, or email"
+            style={{ marginTop: 6 }}
+          />
+          {searchLoading ? <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Searching...</div> : null}
+          {searchError ? <div style={{ marginTop: 6, fontSize: 12, color: "#b91c1c" }}>{searchError}</div> : null}
+          {searchQuery.trim() && searchResults.length > 0 ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                right: 0,
+                zIndex: 20,
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                background: "#fff",
+                marginTop: 6,
+                maxHeight: 260,
+                overflowY: "auto",
+              }}
+            >
+              {searchResults.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  onClick={() => loadQuoteById(result.id)}
+                  disabled={Boolean(loadQuoteLoadingId)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    border: "none",
+                    borderBottom: "1px solid #f1f5f9",
+                    background: "#fff",
+                    padding: "9px 10px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>{result.quoteNumber || "(no quote #)"}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {[result.customerName, result.company, result.email].filter(Boolean).join(" · ")}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {loadQuoteLoadingId ? (
+            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+              Loading selected quote...
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1252,6 +1577,18 @@ export default function QuoteBuilderPage() {
               <span>{currency(totals.grandTotal)}</span>
             </div>
           </div>
+        </div>
+        <div className="section" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+          {saveQuoteSuccess ? <span style={{ color: "#166534", fontWeight: 600 }}>{saveQuoteSuccess}</span> : null}
+          {saveQuoteError ? <span style={{ color: "#b91c1c", fontWeight: 600 }}>{saveQuoteError}</span> : null}
+          <button
+            type="button"
+            className="btn primary"
+            onClick={saveQuote}
+            disabled={saveQuoteLoading}
+          >
+            {saveQuoteLoading ? "Saving..." : "SAVE QUOTE"}
+          </button>
         </div>
       </div>
     </main>
