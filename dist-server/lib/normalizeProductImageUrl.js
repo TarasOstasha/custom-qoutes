@@ -26,6 +26,15 @@ function rewriteVolusionStoreHost(url) {
 function preferVariantOneUrl(url) {
     return url.replace(/-\d+(\.(?:jpe?g|png|gif|webp))(?=(?:\?|#|$))/i, `-${PHOTO_VARIANT}$1`);
 }
+function isVolusionPhotoPath(url) {
+    try {
+        const parsed = new URL(url);
+        return /\/v\/vspfiles\/photos\//i.test(parsed.pathname);
+    }
+    catch {
+        return /\/v\/vspfiles\/photos\//i.test(url);
+    }
+}
 function sanitizeProductCode(productCode) {
     return productCode.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
@@ -69,5 +78,9 @@ function normalizeProductImageUrl(url) {
     if (url == null || url === "")
         return url ?? null;
     const onCanonicalHost = rewriteVolusionStoreHost(url);
+    if (!isVolusionPhotoPath(onCanonicalHost)) {
+        // Keep non-Volusion assets (e.g. custom multer uploads) untouched.
+        return onCanonicalHost;
+    }
     return preferVariantOneUrl(onCanonicalHost);
 }

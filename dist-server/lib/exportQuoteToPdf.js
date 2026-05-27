@@ -132,11 +132,11 @@ async function exportQuoteToPdf(quote) {
     const expoLogoDataUrl = await loadImageDataUrl("/images/quote-logo-expogoods.jpg");
     if (logoDataUrl) {
         const format = /^data:image\/jpe?g/i.test(logoDataUrl) ? "JPEG" : "PNG";
-        doc.addImage(logoDataUrl, format, margin, 16, 116, 38, undefined, "FAST");
+        doc.addImage(logoDataUrl, format, margin + 335, 16, 116, 38, undefined, "FAST");
     }
     if (expoLogoDataUrl) {
         const format = /^data:image\/jpe?g/i.test(expoLogoDataUrl) ? "JPEG" : "PNG";
-        doc.addImage(expoLogoDataUrl, format, margin + 122, 18, 70, 34, undefined, "FAST");
+        doc.addImage(expoLogoDataUrl, format, margin + 469, 24, 70, 34, undefined, "FAST");
     }
     let yLeft = logoDataUrl ? 78 : 34;
     doc.setFont("helvetica", "normal");
@@ -149,10 +149,10 @@ async function exportQuoteToPdf(quote) {
     yLeft += 14;
     doc.text("Phone: (973) 515-5151", margin, yLeft);
     // QUOTE/DATE
-    const metaW = 130;
+    const metaW = 170;
     const metaH = 44;
     const metaX = pageWidth - margin - metaW;
-    const metaY = 24;
+    const metaY = 82;
     doc.setDrawColor(156, 163, 175);
     doc.rect(metaX, metaY, metaW, metaH);
     // dividers (perfect middle)

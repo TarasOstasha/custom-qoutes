@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Swal from "sweetalert2";
 import { apiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
@@ -73,13 +74,18 @@ type ApiQuoteItem = {
   id: string;
   quoteId: string;
   productCode: string | null;
+  product_code?: string | null;
   description: string | null;
   optionalDescription: string | null;
+  optional_description?: string | null;
   imageUrl?: string | null;
+  image_url?: string | null;
   qty: number | string | null;
   unitPrice: number | string | null;
+  unit_price?: number | string | null;
   amount: number | string | null;
   optionsJson?: { chosen_options?: string[]; image_url?: string } | null;
+  options_json?: { chosen_options?: string[]; image_url?: string } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -108,9 +114,12 @@ const asNumber = (value: string | number | null | undefined): number => {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
+const dbQuoteIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
+  const [loadedQuoteId, setLoadedQuoteId] = useState<string | null>(null);
   const skipNextPersist = useRef(false);
   const customImageInputRef = useRef<HTMLInputElement | null>(null);
   const [customImageTargetId, setCustomImageTargetId] = useState<string | null>(null);
@@ -119,6 +128,7 @@ export default function QuoteBuilderPage() {
     const stored = loadQuoteFromPreviewStorage();
     if (stored) {
       setQuote(stored);
+      setLoadedQuoteId(dbQuoteIdPattern.test(stored.id) ? stored.id : null);
       skipNextPersist.current = true;
     }
   }, []);
@@ -735,6 +745,20 @@ export default function QuoteBuilderPage() {
   };
 
   const saveQuote = async () => {
+    const activeQuoteId = loadedQuoteId ?? (dbQuoteIdPattern.test(quote.id) ? quote.id : null);
+    if (activeQuoteId) {
+      const result = await Swal.fire({
+        title: "Update existing quote?",
+        text: `Quote "${quote.quoteNumber}" already exists. Save changes to this quote?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, update quote",
+        cancelButtonText: "Cancel",
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) return;
+    }
+
     setSaveQuoteLoading(true);
     setSaveQuoteSuccess(null);
     setSaveQuoteError(null);
@@ -773,8 +797,14 @@ export default function QuoteBuilderPage() {
         })),
       };
 
-      const response = await fetch(`${apiBase}/api/quotes`, {
-        method: "POST",
+      const method = activeQuoteId ? "PUT" : "POST";
+      const url = activeQuoteId
+        ? `${apiBase}/api/quotes/${encodeURIComponent(activeQuoteId)}`
+        : `${apiBase}/api/quotes`;
+      console.log("[saveQuote] request:", { quoteId: activeQuoteId, method, url });
+
+      const response = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -783,7 +813,7 @@ export default function QuoteBuilderPage() {
       const parsedBody = isJson
         ? ((await response.json()) as { id?: string; error?: string; message?: string })
         : await response.text();
-      console.log("Save quote response:", parsedBody);
+      console.log("[saveQuote] response:", { quoteId: activeQuoteId, method, url, response: parsedBody });
 
       if (!response.ok) {
         if (isJson) {
@@ -796,6 +826,13 @@ export default function QuoteBuilderPage() {
             ? `Failed to save quote (${response.status}): ${text.slice(0, 300)}`
             : `Failed to save quote (${response.status})`,
         );
+      }
+      if (isJson && parsedBody && typeof parsedBody === "object" && "id" in parsedBody) {
+        const nextId = String((parsedBody as { id?: string }).id ?? "").trim() || null;
+        if (nextId) {
+          setLoadedQuoteId(nextId);
+          setQuote((prev) => ({ ...prev, id: nextId }));
+        }
       }
       setSaveQuoteSuccess(`Quote ${quote.quoteNumber} saved.`);
     } catch (error) {
@@ -871,12 +908,13 @@ export default function QuoteBuilderPage() {
       const now = new Date().toISOString();
       const items = (Array.isArray(data.items) ? data.items : []).map((item, index) => {
         const qty = asNumber(item.qty) || 1;
-        const unitPrice = asNumber(item.unitPrice);
+        const unitPrice = asNumber(item.unitPrice ?? item.unit_price ?? null);
         const amount = asNumber(item.amount);
         const calculatedAmount = amount || round2(qty * unitPrice);
-        const productCode = item.productCode ?? null;
-        const imageFromDb = item.imageUrl?.trim() || null;
-        const imageFromOptions = item.optionsJson?.image_url?.trim() || null;
+        const productCode = item.productCode ?? item.product_code ?? null;
+        const options = item.optionsJson ?? item.options_json ?? null;
+        const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
+        const imageFromOptions = options?.image_url?.trim() || null;
         return {
           id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
           quoteId: data.id,
@@ -885,8 +923,8 @@ export default function QuoteBuilderPage() {
           sku: productCode,
           imageUrl: imageFromDb ?? imageFromOptions,
           name: item.description ?? productCode ?? "Line Item",
-          description: item.optionalDescription ?? null,
-          chosenOptions: item.optionsJson?.chosen_options ?? null,
+          description: item.optionalDescription ?? item.optional_description ?? null,
+          chosenOptions: options?.chosen_options ?? null,
           qty,
           unitPrice,
           discountType: "none",
@@ -934,6 +972,7 @@ export default function QuoteBuilderPage() {
         taxTotal: draft.taxTotal,
       });
       setQuote({ ...draft, ...recalculated });
+      setLoadedQuoteId(data.id);
       setLineItemOptions({});
       setSearchQuery("");
       setSearchResults([]);
@@ -990,6 +1029,7 @@ export default function QuoteBuilderPage() {
                 if (!window.confirm("Clear all quote data from this browser?")) return;
                 clearQuoteDraft();
                 setLastCartPayload(null);
+                setLoadedQuoteId(null);
                 setQuote(createEmptyQuote());
               }}
             >

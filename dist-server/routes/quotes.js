@@ -24,6 +24,35 @@ const toDecimalStringOrNull = (value) => {
 };
 const pickBodyValue = (body, snake, camel) => body[snake] !== undefined ? body[snake] : body[camel];
 const uuidV4LikePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const asObjectOrNull = (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        return null;
+    return value;
+};
+const mapQuoteItemInput = (item, quoteId) => {
+    const entry = item;
+    const rawOptions = entry.options_json !== undefined
+        ? entry.options_json
+        : entry.optionsJson !== undefined
+            ? entry.optionsJson
+            : null;
+    const options = asObjectOrNull(rawOptions);
+    const imageFromOptions = toStringOrNull(options?.image_url ?? options?.imageUrl ?? null);
+    const imageFromItem = toStringOrNull(entry.image_url !== undefined ? entry.image_url : entry.imageUrl);
+    return {
+        quoteId,
+        productCode: toStringOrNull(entry.product_code !== undefined ? entry.product_code : entry.productCode),
+        description: toStringOrNull(entry.description),
+        optionalDescription: toStringOrNull(entry.optional_description !== undefined
+            ? entry.optional_description
+            : entry.optionalDescription),
+        qty: toNumberOrNull(entry.qty),
+        unitPrice: toDecimalStringOrNull(entry.unit_price !== undefined ? entry.unit_price : entry.unitPrice),
+        amount: toDecimalStringOrNull(entry.amount),
+        imageUrl: imageFromItem ?? imageFromOptions,
+        optionsJson: options,
+    };
+};
 const getQuotes = async (_req, res) => {
     try {
         const records = await models_1.Quote.findAll({
@@ -238,24 +267,7 @@ const createQuote = async (req, res) => {
             total: toDecimalStringOrNull(body.total),
         }, { transaction: tx });
         if (items.length > 0) {
-            await models_1.QuoteItem.bulkCreate(items.map((item) => {
-                const entry = item;
-                return {
-                    quoteId: quote.id,
-                    productCode: toStringOrNull(entry.product_code !== undefined ? entry.product_code : entry.productCode),
-                    description: toStringOrNull(entry.description),
-                    optionalDescription: toStringOrNull(entry.optional_description !== undefined
-                        ? entry.optional_description
-                        : entry.optionalDescription),
-                    qty: toNumberOrNull(entry.qty),
-                    unitPrice: toDecimalStringOrNull(entry.unit_price !== undefined ? entry.unit_price : entry.unitPrice),
-                    amount: toDecimalStringOrNull(entry.amount),
-                    imageUrl: toStringOrNull(entry.image_url !== undefined ? entry.image_url : entry.imageUrl),
-                    optionsJson: (entry.options_json !== undefined
-                        ? entry.options_json
-                        : entry.optionsJson),
-                };
-            }), { transaction: tx });
+            await models_1.QuoteItem.bulkCreate(items.map((item) => mapQuoteItemInput(item, quote.id)), { transaction: tx });
         }
         await tx.commit();
         const created = await models_1.Quote.findByPk(quote.id, {
@@ -267,6 +279,9 @@ const createQuote = async (req, res) => {
     catch (error) {
         await tx.rollback();
         console.error("POST /api/quotes failed:", error);
+        if (error instanceof sequelize_1.UniqueConstraintError) {
+            return res.status(409).json({ error: "quote_number already exists" });
+        }
         const message = error instanceof Error ? error.message : "Failed to create quote";
         return res.status(500).json({ error: message });
     }
@@ -276,23 +291,44 @@ router.put("/:id", async (req, res) => {
     const tx = await models_1.sequelize.transaction();
     try {
         const quoteId = String(req.params.id);
+        if (!uuidV4LikePattern.test(quoteId)) {
+            await tx.rollback();
+            return res.status(400).json({ error: "Invalid quote id" });
+        }
         const quote = await models_1.Quote.findByPk(quoteId, { transaction: tx });
         if (!quote) {
             await tx.rollback();
             return res.status(404).json({ error: "Quote not found" });
         }
         const body = req.body;
+        const incomingQuoteNumberRaw = pickBodyValue(body, "quote_number", "quoteNumber");
+        const incomingQuoteNumber = incomingQuoteNumberRaw === undefined ? undefined : String(incomingQuoteNumberRaw).trim();
+        if (incomingQuoteNumber !== undefined) {
+            const duplicate = await models_1.Quote.findOne({
+                where: {
+                    quoteNumber: incomingQuoteNumber,
+                    id: { [sequelize_1.Op.ne]: quote.id },
+                },
+                transaction: tx,
+            });
+            if (duplicate) {
+                await tx.rollback();
+                return res.status(409).json({ error: "quote_number already exists" });
+            }
+        }
         const updates = {};
-        if (body.quoteNumber !== undefined)
-            updates.quoteNumber = String(body.quoteNumber);
-        if (body.quoteDate !== undefined)
-            updates.quoteDate = body.quoteDate ?? null;
+        if (incomingQuoteNumber !== undefined)
+            updates.quoteNumber = incomingQuoteNumber;
+        if (pickBodyValue(body, "quote_date", "quoteDate") !== undefined) {
+            updates.quoteDate = toStringOrNull(pickBodyValue(body, "quote_date", "quoteDate"));
+        }
         if (body.status !== undefined)
             updates.status = String(body.status);
         if (body.version !== undefined)
             updates.version = Number(body.version);
-        if (body.customerName !== undefined)
-            updates.customerName = body.customerName ?? null;
+        if (pickBodyValue(body, "customer_name", "customerName") !== undefined) {
+            updates.customerName = toStringOrNull(pickBodyValue(body, "customer_name", "customerName"));
+        }
         if (body.company !== undefined)
             updates.company = body.company ?? null;
         if (body.email !== undefined)
@@ -304,32 +340,22 @@ router.put("/:id", async (req, res) => {
         if (body.notes !== undefined)
             updates.notes = body.notes ?? null;
         if (body.subtotal !== undefined)
-            updates.subtotal = body.subtotal != null ? String(body.subtotal) : null;
+            updates.subtotal = toDecimalStringOrNull(body.subtotal);
         if (body.shipping !== undefined)
-            updates.shipping = body.shipping != null ? String(body.shipping) : null;
-        if (body.taxRate !== undefined)
-            updates.taxRate = body.taxRate != null ? String(body.taxRate) : null;
-        if (body.taxAmount !== undefined)
-            updates.taxAmount = body.taxAmount != null ? String(body.taxAmount) : null;
+            updates.shipping = toDecimalStringOrNull(body.shipping);
+        if (pickBodyValue(body, "tax_rate", "taxRate") !== undefined) {
+            updates.taxRate = toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate"));
+        }
+        if (pickBodyValue(body, "tax_amount", "taxAmount") !== undefined) {
+            updates.taxAmount = toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount"));
+        }
         if (body.total !== undefined)
             updates.total = body.total != null ? String(body.total) : null;
         await quote.update(updates, { transaction: tx });
         if (Array.isArray(body.items)) {
             await models_1.QuoteItem.destroy({ where: { quoteId: quote.id }, transaction: tx });
             if (body.items.length > 0) {
-                await models_1.QuoteItem.bulkCreate(body.items.map((item) => {
-                    const entry = item;
-                    return {
-                        quoteId: quote.id,
-                        productCode: entry.productCode ?? null,
-                        description: entry.description ?? null,
-                        optionalDescription: entry.optionalDescription ?? null,
-                        qty: entry.qty != null ? Number(entry.qty) : null,
-                        unitPrice: entry.unitPrice != null ? String(entry.unitPrice) : null,
-                        amount: entry.amount != null ? String(entry.amount) : null,
-                        optionsJson: entry.optionsJson ?? null,
-                    };
-                }), { transaction: tx });
+                await models_1.QuoteItem.bulkCreate(body.items.map((item) => mapQuoteItemInput(item, quote.id)), { transaction: tx });
             }
         }
         await tx.commit();
@@ -340,6 +366,9 @@ router.put("/:id", async (req, res) => {
     }
     catch (error) {
         await tx.rollback();
+        if (error instanceof sequelize_1.UniqueConstraintError) {
+            return res.status(409).json({ error: "quote_number already exists" });
+        }
         const message = error instanceof Error ? error.message : "Failed to update quote";
         return res.status(500).json({ error: message });
     }

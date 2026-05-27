@@ -22,6 +22,15 @@ export function preferVariantOneUrl(url: string): string {
   return url.replace(/-\d+(\.(?:jpe?g|png|gif|webp))(?=(?:\?|#|$))/i, `-${PHOTO_VARIANT}$1`);
 }
 
+function isVolusionPhotoPath(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return /\/v\/vspfiles\/photos\//i.test(parsed.pathname);
+  } catch {
+    return /\/v\/vspfiles\/photos\//i.test(url);
+  }
+}
+
 function sanitizeProductCode(productCode: string): string {
   return productCode.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
@@ -68,5 +77,9 @@ export async function resolveVolusionProductImageUrl(
 export function normalizeProductImageUrl(url: string | null | undefined): string | null {
   if (url == null || url === "") return url ?? null;
   const onCanonicalHost = rewriteVolusionStoreHost(url);
+  if (!isVolusionPhotoPath(onCanonicalHost)) {
+    // Keep non-Volusion assets (e.g. custom multer uploads) untouched.
+    return onCanonicalHost;
+  }
   return preferVariantOneUrl(onCanonicalHost);
 }

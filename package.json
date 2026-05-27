@@ -35,7 +35,8 @@
     "playwright": "^1.58.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "sequelize": "^6.37.8"
+    "sequelize": "^6.37.8",
+    "sweetalert2": "^11.26.25"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
