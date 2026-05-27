@@ -160,7 +160,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     );
   }
 
-  let yLeft = logoDataUrl ? 78 : 34;
+  let yLeft = logoDataUrl ? 64 : 34;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   doc.text("170 Changebridge Rd, Bldg A7", margin, yLeft);
@@ -186,7 +186,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
 
   // centered Y positions
   const headerY = metaY + metaH * 0.3;
-  const valueY = metaY + metaH * 0.75;
+  const valueY = metaY + metaH * 0.85;
 
   // headers (centered in each column)
   doc.setFont("helvetica", "bold");
@@ -209,8 +209,8 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.setDrawColor(209, 213, 219);
   doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
 
-  // TO
-  const toX = pageWidth / 2;
+  // TO section
+  const toX = pageWidth / 2 - 70;
   const toY = 44;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -218,10 +218,10 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   let yTo = toY + 18;
-  doc.text(quote.customerName || "—", toX, yTo, { align: "center" });
+  doc.text(quote.customerName || "—", toX, yTo, { align: "left" });
   yTo += 14;
   if (quote.customerCompany?.trim()) {
-    doc.text(quote.customerCompany, toX, yTo, { align: "center" });
+    doc.text(quote.customerCompany, toX, yTo, { align: "left" });
     yTo += 14;
   }
   if (quote.customerAddress?.trim()) {
@@ -230,16 +230,16 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
       .map((line) => line.trim())
       .filter(Boolean);
     addressLines.forEach((line) => {
-      doc.text(line, toX, yTo, { align: "center" });
+      doc.text(line, toX, yTo, { align: "left" });
       yTo += 14;
     });
   }
   if (quote.customerEmail?.trim()) {
-    doc.text(quote.customerEmail, toX, yTo, { align: "center" });
+    doc.text(quote.customerEmail, toX, yTo, { align: "left" });
     yTo += 14;
   }
   if (quote.customerPhone?.trim()) {
-    doc.text(quote.customerPhone, toX, yTo, { align: "center" });
+    doc.text(quote.customerPhone, toX, yTo, { align: "left" });
     yTo += 14;
   }
 
