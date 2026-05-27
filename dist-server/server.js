@@ -5,9 +5,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const quotes_1 = __importDefault(require("./routes/quotes"));
+const uploadImage_1 = __importDefault(require("./routes/uploadImage"));
 const cors_1 = __importDefault(require("cors"));
 const scrapeStorefrontCart_1 = require("./services/scrapeStorefrontCart");
 const models_1 = require("./lib/models");
+const uploadsDir_1 = require("./lib/uploadsDir");
 if (process.env.NODE_ENV !== "production") {
     try {
         require("dotenv").config();
@@ -42,6 +44,8 @@ app.post("/api/cart/open-session", async (_req, res) => {
         return res.status(500).json({ error: message });
     }
 });
+app.use("/api/uploads", express_1.default.static((0, uploadsDir_1.getUploadsDir)()));
+app.use("/api/upload-image", uploadImage_1.default);
 app.use("/api/quotes", quotes_1.default);
 app.use("/quotes", quotes_1.default);
 app.listen(port, () => {

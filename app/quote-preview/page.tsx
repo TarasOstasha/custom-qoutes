@@ -77,6 +77,8 @@ export default function QuotePreviewPage() {
             <div>sales@xyzdisplays.com</div>
             <div>Phone: (973) 515-5151</div>
           </div>
+          
+
 
           <div style={{ maxWidth: 260, justifySelf: "center", paddingTop: 36 }}>
             <div>{quote.customerName || "—"}</div>
@@ -88,22 +90,44 @@ export default function QuotePreviewPage() {
             {quote.customerPhone ? <div>{quote.customerPhone}</div> : null}
           </div>
 
-          <table className="preview-meta" style={{ width: 210, fontSize: 13 }}>
-            <tbody>
-              <tr>
-                <th style={{ padding: "8px 10px" }}>Quote</th>
-                <th style={{ padding: "8px 10px" }}>Date</th>
-              </tr>
-              <tr>
-                <td className="right" style={{ padding: "10px", textAlign: "left" }}>
-                  {quote.quoteNumber}
-                </td>
-                <td className="right" style={{ padding: "10px", textAlign: "left" }}>
-                  {quote.quoteDate}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+          <div style={{ display: "flex", alignItems: "end", justifyContent: 'right', flexDirection: 'column' }}>
+            <div
+              className="preview-logo"
+              style={{ display: "flex", alignItems: "center", gap: 10 }}
+            >
+              <img
+                src="/images/quote-logo-expogoods.jpg"
+                alt="EXPOGOODS"
+                style={{ height: 34, width: "auto", objectFit: "contain" }}
+              />
+              <img
+                src="/images/quote-logo.jpg"
+                alt="xyzDisplays"
+                style={{ height: 38, width: "auto", objectFit: "contain" }}
+              />
+            </div>
+            <table
+              className="preview-meta"
+              style={{ width: 210, fontSize: 13, marginTop: 20 }}
+            >
+              <tbody>
+                <tr>
+                  <th style={{ padding: "8px 10px" }}>Quote</th>
+                  <th style={{ padding: "8px 10px" }}>Date</th>
+                </tr>
+                <tr>
+                  <td className="right" style={{ padding: "10px", textAlign: "left" }}>
+                    {quote.quoteNumber}
+                  </td>
+                  <td className="right" style={{ padding: "10px", textAlign: "left" }}>
+                    {quote.quoteDate}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
         </div>
 
         <div className="preview-block">

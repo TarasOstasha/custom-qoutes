@@ -1,8 +1,10 @@
 import express from "express";
 import quotesRouter from "./routes/quotes";
+import uploadImageRouter from "./routes/uploadImage";
 import cors from "cors";
 import { openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
 import { sequelize } from "./lib/models";
+import { getUploadsDir } from "./lib/uploadsDir";
 
 if (process.env.NODE_ENV !== "production") {
   try {
@@ -43,6 +45,9 @@ app.post("/api/cart/open-session", async (_req, res) => {
     return res.status(500).json({ error: message });
   }
 });
+
+app.use("/api/uploads", express.static(getUploadsDir()));
+app.use("/api/upload-image", uploadImageRouter);
 
 app.use("/api/quotes", quotesRouter);
 app.use("/quotes", quotesRouter);

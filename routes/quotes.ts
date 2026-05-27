@@ -282,6 +282,9 @@ const createQuote = async (req: Request, res: Response) => {
               entry.unit_price !== undefined ? entry.unit_price : entry.unitPrice,
             ),
             amount: toDecimalStringOrNull(entry.amount),
+            imageUrl: toStringOrNull(
+              entry.image_url !== undefined ? entry.image_url : entry.imageUrl,
+            ),
             optionsJson:
               (entry.options_json !== undefined
                 ? entry.options_json

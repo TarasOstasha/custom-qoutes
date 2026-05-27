@@ -75,6 +75,7 @@ type ApiQuoteItem = {
   productCode: string | null;
   description: string | null;
   optionalDescription: string | null;
+  imageUrl?: string | null;
   qty: number | string | null;
   unitPrice: number | string | null;
   amount: number | string | null;
@@ -403,29 +404,50 @@ export default function QuoteBuilderPage() {
     customImageInputRef.current?.click();
   };
 
-  const handleCustomImageSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomImageSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     const targetId = customImageTargetId;
     event.target.value = "";
     if (!file || !targetId) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : null;
-      if (!result) return;
+    const item = quote.items.find((i) => i.id === targetId);
+    if (!item || item.lineType !== "custom" || isQuoteDiscountLine(item)) {
+      setCustomImageTargetId(null);
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const response = await fetch(`${apiBase}/api/upload-image`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as { image_url?: string; error?: string };
+      if (!response.ok || !data.image_url) {
+        alert(data?.error ?? "Failed to upload image");
+        return;
+      }
+
       setQuote((prev) => {
         const index = prev.items.findIndex((i) => i.id === targetId);
         if (index < 0) return prev;
         const items = [...prev.items];
-        items[index] = { ...items[index], imageUrl: result, updatedAt: new Date().toISOString() } as QuoteItem;
+        items[index] = {
+          ...items[index],
+          imageUrl: data.image_url,
+          updatedAt: new Date().toISOString(),
+        } as QuoteItem;
         return {
           ...prev,
           ...recalcQuotePreservingTaxRate(prev, items),
         };
       });
+    } catch {
+      alert("Failed to upload image");
+    } finally {
       setCustomImageTargetId(null);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const appendCustomLine = (preset: "item" | "discount" = "item") => {
@@ -751,7 +773,6 @@ export default function QuoteBuilderPage() {
         })),
       };
 
-      console.log("Save quote payload:", payload);
       const response = await fetch(`${apiBase}/api/quotes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -854,14 +875,15 @@ export default function QuoteBuilderPage() {
         const amount = asNumber(item.amount);
         const calculatedAmount = amount || round2(qty * unitPrice);
         const productCode = item.productCode ?? null;
-        const imageFromOptions = item.optionsJson?.image_url ?? null;
+        const imageFromDb = item.imageUrl?.trim() || null;
+        const imageFromOptions = item.optionsJson?.image_url?.trim() || null;
         return {
           id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
           quoteId: data.id,
           lineType: productCode ? "product" : "custom",
           sourceProductId: productCode,
           sku: productCode,
-          imageUrl: imageFromOptions,
+          imageUrl: imageFromDb ?? imageFromOptions,
           name: item.description ?? productCode ?? "Line Item",
           description: item.optionalDescription ?? null,
           chosenOptions: item.optionsJson?.chosen_options ?? null,
