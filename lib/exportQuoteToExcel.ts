@@ -35,7 +35,13 @@ function preferHighQualityImageUrl(url: string | null | undefined): string {
   return normalizeProductImageUrl(url) ?? url ?? "";
 }
 
-function applyBorderRange(ws: ExcelJS.Worksheet, r1: number, c1: number, r2: number, c2: number) {
+function applyBorderRange(
+  ws: ExcelJS.Worksheet,
+  r1: number,
+  c1: number,
+  r2: number,
+  c2: number,
+) {
   for (let r = r1; r <= r2; r += 1) {
     for (let c = c1; c <= c2; c += 1) {
       ws.getCell(r, c).border = {
@@ -59,7 +65,7 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
 }
 
 async function fetchImageForExcel(
-  url: string
+  url: string,
 ): Promise<{ base64: string; extension: "jpeg" | "png" | "gif" } | null> {
   try {
     const res = await fetch(url, { mode: "cors" });
@@ -72,12 +78,16 @@ async function fetchImageForExcel(
     return { base64: arrayBufferToBase64(buf), extension };
   } catch {
     try {
-      const proxied = await fetch(`${apiBase}/quotes/image-proxy?url=${encodeURIComponent(url)}`);
+      const proxied = await fetch(
+        `${apiBase}/quotes/image-proxy?url=${encodeURIComponent(url)}`,
+      );
       if (!proxied.ok) return null;
       const data = (await proxied.json()) as { dataUrl?: string };
       const dataUrl = data.dataUrl ?? "";
       if (!dataUrl.startsWith("data:image/")) return null;
-      const mime = dataUrl.slice("data:image/".length, dataUrl.indexOf(";")).toLowerCase();
+      const mime = dataUrl
+        .slice("data:image/".length, dataUrl.indexOf(";"))
+        .toLowerCase();
       const extension: "jpeg" | "png" | "gif" = mime.includes("png")
         ? "png"
         : mime.includes("gif")
@@ -92,7 +102,10 @@ async function fetchImageForExcel(
   }
 }
 
-async function loadLogoForExcel(): Promise<{ base64: string; extension: "jpeg" | "png" | "gif" } | null> {
+async function loadLogoForExcel(): Promise<{
+  base64: string;
+  extension: "jpeg" | "png" | "gif";
+} | null> {
   const candidates = [
     "/images/quote-logo.jpg",
     "/images/quote-logo.jpeg",
@@ -115,25 +128,47 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   workbook.creator = "custom-quote";
   const ws = workbook.addWorksheet("Estimate");
 
-  ws.columns = [{ width: 14 }, { width: 44 }, { width: 8 }, { width: 14 }, { width: 14 }];
+  ws.columns = [
+    { width: 14 },
+    { width: 44 },
+    { width: 8 },
+    { width: 14 },
+    { width: 14 },
+  ];
 
   let row = 1;
-
+  // LOGO
   const logo = await loadLogoForExcel();
+  const expoGoodsLogo = await fetchImageForExcel(
+    "/images/quote-logo-expogoods.jpg",
+  );
   if (logo) {
     const logoId = workbook.addImage({
       base64: logo.base64,
       extension: logo.extension,
     });
     ws.addImage(logoId, {
-      tl: { col: 0.03, row: 0.02 },
+      // tl: { col: 0.03, row: 0.02 },
+      tl: { col: 3.2, row: 0.02 },
       ext: { width: 118, height: 40 },
     });
+    if (expoGoodsLogo) {
+      const expoGoodsLogoId = workbook.addImage({
+        base64: expoGoodsLogo.base64,
+        extension: expoGoodsLogo.extension,
+      });
+      ws.addImage(expoGoodsLogoId, {
+        tl: { col: 3.2, row: 2.3 },
+        ext: { width: 118, height: 40 },
+      });
+    }
   } else {
     ws.mergeCells(`A${row}:B${row}`);
     ws.getCell(`A${row}`).value = "xyzDisplays";
     ws.getCell(`A${row}`).font = { bold: true, size: 14 };
   }
+  // QUOTE/DATE
+  row += 5;
   ws.getCell(`D${row}`).value = "QUOTE";
   ws.getCell(`D${row}`).font = { bold: true };
   ws.getCell(`E${row}`).value = quote.quoteNumber;
@@ -146,31 +181,32 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   ws.getCell(`D${row}`).font = { bold: true };
   ws.getCell(`E${row}`).value = quote.quoteDate;
   ws.getCell(`E${row}`).alignment = { horizontal: "right" };
-  applyBorderRange(ws, 1, 4, 2, 5);
+  applyBorderRange(ws, 6, 4, 7, 5);
   row += 1;
 
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = "170 Changebridge Rd, Bldg A7";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = "Montville, NJ 07045";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = "sales@xyzdisplays.com";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = "Phone: (973) 515-5151";
-  row += 1;
+  // ADDRESS
+  ws.getCell("A1").value = "170 Changebridge Rd, Bldg A7";
+  ws.getCell("A2").value = "Montville, NJ 07045";
+  ws.getCell("A3").value = "sales@xyzdisplays.com";
+  ws.getCell("A4").value = "Phone: (973) 515-5151";
 
-  row += 1;
+  // TO (must start below the QUOTE/DATE rows so merged gallery cells do not hide DATE)
+  row = Math.max(row, 8);
 
-  const toBlockStart = row;
   ws.getCell(`A${row}`).value = "TO";
   ws.getCell(`A${row}`).font = { bold: true };
+
+  const toBlockStart = row;
+
   ws.mergeCells(`C${toBlockStart}:E${toBlockStart + 3}`);
   const galleryCell = ws.getCell(`C${toBlockStart}`);
   galleryCell.value = "Product images";
-  galleryCell.alignment = { vertical: "top", horizontal: "center", wrapText: true };
+  galleryCell.alignment = {
+    vertical: "top",
+    horizontal: "center",
+    wrapText: true,
+  };
+
   row += 1;
 
   ws.mergeCells(`A${row}:B${row}`);
@@ -186,23 +222,23 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   ws.getCell(`A${row}`).value = quote.customerPhone ?? "";
   row += 1;
 
+  // PRODUCT IMAGES
   const galleryItems = quote.items.filter((i) => Boolean(i.imageUrl?.trim()));
-  const galleryUrls = galleryItems.map((i) => preferHighQualityImageUrl(i.imageUrl));
-
-  const galleryResults = await Promise.all(
-    galleryUrls.map((u) => (u ? fetchImageForExcel(u) : Promise.resolve(null)))
+  const galleryUrls = galleryItems.map((i) =>
+    preferHighQualityImageUrl(i.imageUrl),
   );
 
+  const galleryResults = await Promise.all(
+    galleryUrls.map((u) => (u ? fetchImageForExcel(u) : Promise.resolve(null))),
+  );
 
-  const perRow = 3;
-  const startCol = 2.6;
-  const colSpacing = 1.08;
-  const startRow = toBlockStart - 1 + 0.12;
+  const perRow = 5;
+  const startCol = 2.1;
+  const colSpacing = 0.9;
+  const startRow = toBlockStart + 0.12;
   const rowSpacing = 3.3;
-  const imageWidth = 78;
-  const imageHeight = 78;
-  const imageOffsets = [0, 0.28, 0, 0];
-  const imageWidths = [78, 68, 68, 78];
+  const imageWidth = 68;
+  const imageHeight = 68;
 
   let embeddedGallery = 0;
 
@@ -221,11 +257,11 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
 
     ws.addImage(imageId, {
       tl: {
-        col: startCol + colIndex * colSpacing + (imageOffsets[embeddedGallery] || 0),
+        col: startCol + colIndex * colSpacing,
         row: startRow + rowIndex * rowSpacing,
       },
       ext: {
-        width: imageWidths[embeddedGallery] || imageWidth,
+        width: imageWidth,
         height: imageHeight,
       },
     });
@@ -234,7 +270,9 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   });
 
   const anyGalleryUrl = galleryUrls.some(Boolean);
-  const anyGalleryImage = galleryResults.some((r, i) => galleryUrls[i] && r !== null);
+  const anyGalleryImage = galleryResults.some(
+    (r, i) => galleryUrls[i] && r !== null,
+  );
   if (anyGalleryUrl && !anyGalleryImage) {
     galleryCell.value = galleryUrls.filter(Boolean).join("\n");
   } else if (embeddedGallery > 0) {
@@ -242,7 +280,10 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   }
 
   const galleryRowCount = Math.max(1, Math.ceil(embeddedGallery / perRow));
-  row += 1 + (galleryRowCount - 1) * rowSpacing;
+  // Keep worksheet row indices as integers; image anchors can still use fractional rows.
+  const galleryRowAdvance =
+    1 + Math.max(0, Math.ceil((galleryRowCount - 1) * rowSpacing));
+  row += galleryRowAdvance;
 
   const headerRow = row;
   const hr = ws.getRow(headerRow);
@@ -270,7 +311,12 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
     r.getCell(1).value = item.sku ?? "—";
     r.getCell(1).alignment = { vertical: "top", horizontal: "left" };
     r.getCell(2).value = desc;
-    r.getCell(2).alignment = { vertical: "top", horizontal: "left", wrapText: true, indent: 4 };
+    r.getCell(2).alignment = {
+      vertical: "top",
+      horizontal: "left",
+      wrapText: true,
+      indent: 4,
+    };
     r.getCell(3).value = isQuoteDiscountLine(item) ? "—" : item.qty;
     r.getCell(3).alignment = { horizontal: "center", vertical: "top" };
     if (isQuoteDiscountLine(item)) {
@@ -287,7 +333,9 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
     // Keep description rows taller so text and thumbnail have enough breathing room.
     r.height = Math.max(52, Math.min(140, 22 + desc.split("\n").length * 18));
 
-    const url = item.imageUrl?.trim() ? preferHighQualityImageUrl(item.imageUrl) : "";
+    const url = item.imageUrl?.trim()
+      ? preferHighQualityImageUrl(item.imageUrl)
+      : "";
     if (url) {
       const embedded = await fetchImageForExcel(url);
       if (embedded) {
@@ -310,7 +358,7 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   const addTotalRow = (
     label: string,
     value: number,
-    opts?: { bold?: boolean; thickTop?: boolean; textValue?: string | null }
+    opts?: { bold?: boolean; thickTop?: boolean; textValue?: string | null },
   ) => {
     const rr = ws.getRow(row);
     rr.getCell(labelCol).value = label;
@@ -327,8 +375,12 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
       rr.getCell(valueCol).font = { bold: true };
     }
     if (opts?.thickTop) {
-      rr.getCell(labelCol).border = { top: { style: "medium", color: { argb: "FF6B7280" } } };
-      rr.getCell(valueCol).border = { top: { style: "medium", color: { argb: "FF6B7280" } } };
+      rr.getCell(labelCol).border = {
+        top: { style: "medium", color: { argb: "FF6B7280" } },
+      };
+      rr.getCell(valueCol).border = {
+        top: { style: "medium", color: { argb: "FF6B7280" } },
+      };
     }
     row += 1;
   };
@@ -337,12 +389,21 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   if (quote.discountTotal > 0) {
     addTotalRow("Discounts", -quote.discountTotal);
   }
-  const shippingNote = formatShippingDestination(quote.shippingState, quote.shippingZip);
-  const shippingText = [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") || null;
+  const shippingNote = formatShippingDestination(
+    quote.shippingState,
+    quote.shippingZip,
+  );
+  const shippingText =
+    [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") ||
+    null;
   addTotalRow("Shipping", quote.shippingTotal, { textValue: shippingText });
-  addTotalRow(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal, {
-    textValue: quote.taxLabel?.trim() || null,
-  });
+  addTotalRow(
+    formatTaxRowLabel(quote.taxDescription, quote.shippingState),
+    quote.taxTotal,
+    {
+      textValue: quote.taxLabel?.trim() || null,
+    },
+  );
   addTotalRow("TOTAL", quote.grandTotal, { bold: true, thickTop: true });
 
   row += 1;
@@ -353,7 +414,10 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   ws.mergeCells(`A${row}:E${row}`);
   ws.getCell(`A${row}`).value = quote.notes ?? "";
   ws.getCell(`A${row}`).alignment = { wrapText: true, vertical: "top" };
-  ws.getRow(row).height = Math.max(40, 20 + (quote.notes ?? "").split("\n").length * 16);
+  ws.getRow(row).height = Math.max(
+    40,
+    20 + (quote.notes ?? "").split("\n").length * 16,
+  );
 
   row += 1;
   ws.mergeCells(`A${row}:E${row}`);
