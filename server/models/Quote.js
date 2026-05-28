@@ -66,6 +66,21 @@ Quote.init(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
     },
+    shippingLabel: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_label",
+    },
+    shippingState: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_state",
+    },
+    shippingZip: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_zip",
+    },
     taxRate: {
       type: DataTypes.DECIMAL(5, 3),
       allowNull: true,
@@ -75,6 +90,16 @@ Quote.init(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       field: "tax_amount",
+    },
+    taxLabel: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "tax_label",
+    },
+    taxDescription: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "tax_description",
     },
     total: {
       type: DataTypes.DECIMAL(10, 2),

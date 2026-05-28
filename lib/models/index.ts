@@ -1,4 +1,4 @@
-const sequelize = require("../../server/db/sequelize");
-const { Quote, QuoteItem } = require("../../server/models/associations");
+import sequelize from "../../db/sequelize";
+import { Quote, QuoteItem } from "./associations";
 
 export { sequelize, Quote, QuoteItem };

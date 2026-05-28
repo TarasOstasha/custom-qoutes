@@ -16,6 +16,39 @@ const playwrightBrowsersPath = isDev
 
 process.env.PLAYWRIGHT_BROWSERS_PATH = playwrightBrowsersPath;
 
+function loadEnvironment() {
+  const dotenvPath = isDev
+    ? path.join(devRoot, ".env")
+    : path.join(prodAppRoot, ".env");
+
+  if (!fs.existsSync(dotenvPath)) {
+    return;
+  }
+
+  try {
+    const dotenv = require("dotenv");
+    dotenv.config({ path: dotenvPath, override: false, quiet: true });
+  } catch {
+    // Ignore dotenv load errors; startup checks will surface missing config.
+  }
+}
+
+function applyDatabaseFallback() {
+  if (process.env.DATABASE_URL) {
+    return;
+  }
+
+  try {
+    require.resolve("sqlite3");
+  } catch {
+    return;
+  }
+
+  // Allow packaged app to run locally without PostgreSQL env setup.
+  const sqliteFile = path.join(app.getPath("userData"), "custom-quote.sqlite");
+  process.env.DATABASE_URL = `sqlite:${sqliteFile}`;
+}
+
 function waitForHttp(url, timeoutMs = 90_000) {
   const startedAt = Date.now();
 
@@ -117,6 +150,8 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    loadEnvironment();
+    applyDatabaseFallback();
     startApiInProcess();
     startWebInProcess();
 

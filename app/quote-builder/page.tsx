@@ -104,8 +104,13 @@ type ApiQuote = {
   notes: string | null;
   subtotal: number | string | null;
   shipping: number | string | null;
+  shippingLabel?: string | null;
+  shippingState?: string | null;
+  shippingZip?: string | null;
   taxRate: number | string | null;
   taxAmount: number | string | null;
+  taxLabel?: string | null;
+  taxDescription?: string | null;
   total: number | string | null;
   items?: ApiQuoteItem[];
 };
@@ -776,8 +781,13 @@ export default function QuoteBuilderPage() {
         notes: quote.notes ?? null,
         subtotal: Number(totals.subtotal),
         shipping: Number(totals.shippingTotal),
+        shipping_label: quote.shippingLabel ?? null,
+        shipping_state: quote.shippingState ?? null,
+        shipping_zip: quote.shippingZip ?? null,
         tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
         tax_amount: Number(totals.taxTotal),
+        tax_label: quote.taxLabel ?? null,
+        tax_description: quote.taxDescription ?? null,
         total: Number(totals.grandTotal),
         items: quote.items.map((item) => ({
           product_code: item.sku ?? item.sourceProductId ?? null,
@@ -953,12 +963,12 @@ export default function QuoteBuilderPage() {
         subtotal: 0,
         discountTotal: 0,
         shippingTotal: asNumber(data.shipping),
-        shippingLabel: null,
-        shippingState: null,
-        shippingZip: null,
+        shippingLabel: data.shippingLabel ?? null,
+        shippingState: data.shippingState ?? null,
+        shippingZip: data.shippingZip ?? null,
         taxTotal: asNumber(data.taxAmount),
-        taxLabel: null,
-        taxDescription: null,
+        taxLabel: data.taxLabel ?? null,
+        taxDescription: data.taxDescription ?? null,
         taxRatePercent: data.taxRate != null ? asNumber(data.taxRate) * 100 : null,
         grandTotal: 0,
         items,

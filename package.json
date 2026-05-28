@@ -61,6 +61,7 @@
     "asar": false,
     "files": [
       "electron/**/*",
+      ".env",
       "dist-server/**/*",
       ".next/**/*",
       "public/**/*",
@@ -73,10 +74,6 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": ".env",
-        "to": "app/.env"
       }
     ],
     "win": {

@@ -294,8 +294,13 @@ const createQuote = async (req: Request, res: Response) => {
         notes: toStringOrNull(body.notes),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
+        shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
+        shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
+        shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
         taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
         taxAmount: toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount")),
+        taxLabel: toStringOrNull(pickBodyValue(body, "tax_label", "taxLabel")),
+        taxDescription: toStringOrNull(pickBodyValue(body, "tax_description", "taxDescription")),
         total: toDecimalStringOrNull(body.total),
       },
       { transaction: tx },
@@ -376,11 +381,26 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.notes !== undefined) updates.notes = (body.notes as string | null) ?? null;
     if (body.subtotal !== undefined) updates.subtotal = toDecimalStringOrNull(body.subtotal);
     if (body.shipping !== undefined) updates.shipping = toDecimalStringOrNull(body.shipping);
+    if (pickBodyValue(body, "shipping_label", "shippingLabel") !== undefined) {
+      updates.shippingLabel = toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel"));
+    }
+    if (pickBodyValue(body, "shipping_state", "shippingState") !== undefined) {
+      updates.shippingState = toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState"));
+    }
+    if (pickBodyValue(body, "shipping_zip", "shippingZip") !== undefined) {
+      updates.shippingZip = toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip"));
+    }
     if (pickBodyValue(body, "tax_rate", "taxRate") !== undefined) {
       updates.taxRate = toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate"));
     }
     if (pickBodyValue(body, "tax_amount", "taxAmount") !== undefined) {
       updates.taxAmount = toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount"));
+    }
+    if (pickBodyValue(body, "tax_label", "taxLabel") !== undefined) {
+      updates.taxLabel = toStringOrNull(pickBodyValue(body, "tax_label", "taxLabel"));
+    }
+    if (pickBodyValue(body, "tax_description", "taxDescription") !== undefined) {
+      updates.taxDescription = toStringOrNull(pickBodyValue(body, "tax_description", "taxDescription"));
     }
     if (body.total !== undefined) updates.total = body.total != null ? String(body.total) : null;
 

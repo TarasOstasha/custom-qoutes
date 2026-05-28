@@ -18,6 +18,8 @@
   },
   "include": [
     "server.ts",
+    "db/**/*.ts",
+    "server/db/**/*.ts",
     "routes/**/*.ts",
     "services/**/*.ts",
     "mock/**/*.ts",

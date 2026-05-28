@@ -15,8 +15,13 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare notes: string | null;
   declare subtotal: string | null;
   declare shipping: string | null;
+  declare shippingLabel: string | null;
+  declare shippingState: string | null;
+  declare shippingZip: string | null;
   declare taxRate: string | null;
   declare taxAmount: string | null;
+  declare taxLabel: string | null;
+  declare taxDescription: string | null;
   declare total: string | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -83,6 +88,21 @@ Quote.init(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
     },
+    shippingLabel: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_label",
+    },
+    shippingState: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_state",
+    },
+    shippingZip: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_zip",
+    },
     taxRate: {
       type: DataTypes.DECIMAL(5, 3),
       allowNull: true,
@@ -92,6 +112,16 @@ Quote.init(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       field: "tax_amount",
+    },
+    taxLabel: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "tax_label",
+    },
+    taxDescription: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "tax_description",
     },
     total: {
       type: DataTypes.DECIMAL(10, 2),

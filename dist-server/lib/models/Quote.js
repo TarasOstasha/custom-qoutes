@@ -66,6 +66,21 @@ Quote.init({
         type: sequelize_1.DataTypes.DECIMAL(10, 2),
         allowNull: true,
     },
+    shippingLabel: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "shipping_label",
+    },
+    shippingState: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "shipping_state",
+    },
+    shippingZip: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "shipping_zip",
+    },
     taxRate: {
         type: sequelize_1.DataTypes.DECIMAL(5, 3),
         allowNull: true,
@@ -75,6 +90,16 @@ Quote.init({
         type: sequelize_1.DataTypes.DECIMAL(10, 2),
         allowNull: true,
         field: "tax_amount",
+    },
+    taxLabel: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "tax_label",
+    },
+    taxDescription: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "tax_description",
     },
     total: {
         type: sequelize_1.DataTypes.DECIMAL(10, 2),
