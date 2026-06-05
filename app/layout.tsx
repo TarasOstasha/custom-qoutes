@@ -2,8 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Custom Quote Demo",
-  description: "Frontend-only quote app demo",
+  title: "xyzDiplays Custom Quote App",
+  description: "Frontend-only quote app",
 };
 
 export default function RootLayout({

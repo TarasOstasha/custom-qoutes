@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLayoutEffect, useState } from "react";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
+import { formatQuoteLineDescription } from "../../lib/formatQuoteLineDescription";
 import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
@@ -181,7 +182,7 @@ export default function QuotePreviewPage() {
                             />
                           ) : null}
                           <div style={{ minWidth: 0 }}>
-                            <div>
+                            <div style={{ whiteSpace: "pre-line" }}>
                               {item.sku ? (
                                 <a
                                   href={`https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku)}`}
@@ -195,10 +196,10 @@ export default function QuotePreviewPage() {
                                     e.currentTarget.style.color = "#111827";
                                   }}
                                 >
-                                  {item.description || item.name}
+                                  {formatQuoteLineDescription(item)}
                                 </a>
                               ) : (
-                                item.description || item.name
+                                formatQuoteLineDescription(item)
                               )}
                             </div>
                           </div>

@@ -10,7 +10,10 @@ import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuote, recalcQuotePreservingTaxRate, round2 } from "../../lib/recalcQuote";
-import { formatShippingDestination } from "../../lib/shippingDestination";
+import {
+  formatShippingDestination,
+  parseShippingDestinationText,
+} from "../../lib/shippingDestination";
 import {
   formatTaxRatePercentInput,
   formatTaxRowLabel,
@@ -119,6 +122,16 @@ const asNumber = (value: string | number | null | undefined): number => {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
 };
+
+function cartPayloadHasImportableData(payload: CartPayload): boolean {
+  return Boolean(
+    payload.cartItems.length ||
+      payload.shippingTotal ||
+      payload.taxTotal ||
+      payload.shippingState ||
+      payload.shippingZip
+  );
+}
 const dbQuoteIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -149,8 +162,12 @@ export default function QuoteBuilderPage() {
   const [identifiedEmail, setIdentifiedEmail] = useState<string | null>(null);
   const [copyCartLoading, setCopyCartLoading] = useState(false);
   const [openCartSessionLoading, setOpenCartSessionLoading] = useState(false);
+  const [openLiveCartLoading, setOpenLiveCartLoading] = useState(false);
   const [addVolusionLoading, setAddVolusionLoading] = useState(false);
   const [scrapeCartServerLoading, setScrapeCartServerLoading] = useState(false);
+  const [clearCartLoading, setClearCartLoading] = useState(false);
+  const [clearCartMessage, setClearCartMessage] = useState<string | null>(null);
+  const [clearCartError, setClearCartError] = useState<string | null>(null);
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
   const [saveQuoteError, setSaveQuoteError] = useState<string | null>(null);
@@ -168,25 +185,39 @@ export default function QuoteBuilderPage() {
     [quote.items, quote.shippingTotal, quote.taxTotal]
   );
 
-  const applyChargeInput = (field: "shipping" | "tax", rawValue: string) => {
+  const applyChargeInput = (field: "tax", rawValue: string) => {
     const trimmed = rawValue.trim();
     const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
     const isNumeric = trimmed.length > 0 && Number.isFinite(numeric);
 
     setQuote((prev) => {
-      const nextShippingTotal = field === "shipping" ? (isNumeric ? round2(numeric) : 0) : prev.shippingTotal;
-      const nextTaxTotal = field === "tax" ? (isNumeric ? round2(numeric) : 0) : prev.taxTotal;
+      const nextTaxTotal = isNumeric ? round2(numeric) : 0;
       const nextLabel = trimmed.length > 0 && !isNumeric ? trimmed : null;
 
       const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
-        shippingTotal: nextShippingTotal,
-        ...(field === "tax" ? { taxTotal: nextTaxTotal } : {}),
+        taxTotal: nextTaxTotal,
       });
 
       return {
         ...prev,
         ...recalculated,
-        ...(field === "shipping" ? { shippingLabel: nextLabel } : { taxLabel: nextLabel }),
+        taxLabel: nextLabel,
+      };
+    });
+  };
+
+  const applyShippingAmount = (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
+    const nextShippingTotal = trimmed.length > 0 && Number.isFinite(numeric) ? round2(numeric) : 0;
+
+    setQuote((prev) => {
+      const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
+        shippingTotal: nextShippingTotal,
+      });
+      return {
+        ...prev,
+        ...recalculated,
       };
     });
   };
@@ -195,6 +226,25 @@ export default function QuoteBuilderPage() {
 
   /** Draft while the % field is focused so partial values like "10" are not overwritten. */
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
+  const [shippingDestinationDraft, setShippingDestinationDraft] = useState<string | null>(null);
+  const shippingDestinationText = formatShippingDestination(quote.shippingState, quote.shippingZip);
+  const shippingDestinationDisplay =
+    shippingDestinationDraft !== null ? shippingDestinationDraft : shippingDestinationText;
+
+  const applyShippingDestination = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setQuote((prev) => ({ ...prev, shippingState: null, shippingZip: null }));
+      return;
+    }
+    const { state, zip } = parseShippingDestinationText(trimmed);
+    setQuote((prev) => ({
+      ...prev,
+      shippingState: state || null,
+      shippingZip: zip || null,
+    }));
+  };
+
   const taxPercentDisplay =
     taxPercentDraft !== null ? taxPercentDraft : formatTaxRatePercentInput(cartTaxRatePercent);
 
@@ -378,10 +428,8 @@ export default function QuoteBuilderPage() {
   };
 
   const mergeDescriptionFields = (primary: string, secondary: string): string => {
-    const p = primary.trim();
-    const s = secondary.trim();
-    if (p && s) return `${p}${DESC_SECONDARY_SEPARATOR}${s}`;
-    return p || s;
+    if (primary && secondary) return `${primary}${DESC_SECONDARY_SEPARATOR}${secondary}`;
+    return primary || secondary;
   };
 
   const updateDescriptionField = (index: number, item: QuoteItem, field: "primary" | "secondary", value: string) => {
@@ -394,8 +442,9 @@ export default function QuoteBuilderPage() {
   const applySelectedOptionsToDescription = (index: number, item: QuoteItem) => {
     const selected = lineItemOptions[item.id]?.selected ?? [];
     if (!selected.length) return;
-    const primary = selected[0] ?? "";
-    const secondary = selected.length > 1 ? selected.slice(1).join(" | ") : "";
+    const primary = (selected[0] ?? "").trim();
+    const secondary =
+      selected.length > 1 ? selected.slice(1).join(" | ").trim() : "";
     updateItem(index, {
       description: mergeDescriptionFields(primary, secondary) || null,
       chosenOptions: null,
@@ -585,8 +634,8 @@ export default function QuoteBuilderPage() {
           { ...prev, taxRatePercent },
           items,
           {
-            shippingTotal: payload.shippingTotal ?? 0,
-            taxTotal: payload.taxTotal ?? 0,
+            shippingTotal: payload.shippingTotal ?? prev.shippingTotal,
+            taxTotal: payload.taxTotal ?? prev.taxTotal,
             taxRatePercent,
           }
         ),
@@ -660,13 +709,7 @@ export default function QuoteBuilderPage() {
       const payload = await extractCartFromPage();
       console.log(payload);
       setLastCartPayload(payload);
-      if (
-        !payload.cartItems.length &&
-        !payload.shippingTotal &&
-        !payload.taxTotal &&
-        !payload.shippingState &&
-        !payload.shippingZip
-      ) {
+      if (!cartPayloadHasImportableData(payload)) {
         return;
       }
       appendScrapedCartPayload(payload);
@@ -695,6 +738,65 @@ export default function QuoteBuilderPage() {
     }
   };
 
+  const openLiveCartPage = async () => {
+    setOpenLiveCartLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/api/cart/open-cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const raw = await response.text();
+      let data: { opened?: boolean; url?: string; error?: string } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        alert(`Failed to open cart (${response.status}). Restart the API server and try again.`);
+        return;
+      }
+      if (!response.ok) {
+        alert(data?.error ?? "Failed to open cart");
+        return;
+      }
+      setLiveSessionUrl(data.url ?? liveSessionUrl);
+    } finally {
+      setOpenLiveCartLoading(false);
+    }
+  };
+
+  const clearStorefrontCart = async () => {
+    setClearCartLoading(true);
+    setClearCartMessage(null);
+    setClearCartError(null);
+    try {
+      const response = await fetch(`${apiBase}/quotes/clear-cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await response.json()) as {
+        success?: boolean;
+        removedCount?: number;
+        cartEmpty?: boolean;
+        method?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        setClearCartError(data?.error ?? "Failed to clear cart");
+        return;
+      }
+      if (data.cartEmpty) {
+        setClearCartMessage("Cart cleared.");
+      } else {
+        setClearCartError("Cart could not be fully cleared.");
+      }
+    } catch {
+      setClearCartError("Failed to clear cart");
+    } finally {
+      setClearCartLoading(false);
+    }
+  };
+
   const copyCartViaServer = async () => {
     setScrapeCartServerLoading(true);
     try {
@@ -709,13 +811,7 @@ export default function QuoteBuilderPage() {
         return;
       }
       setLastCartPayload(data);
-      if (
-        !data.cartItems?.length &&
-        !data.shippingTotal &&
-        !data.taxTotal &&
-        !data.shippingState &&
-        !data.shippingZip
-      ) {
+      if (!cartPayloadHasImportableData(data)) {
         return;
       }
       appendScrapedCartPayload(data);
@@ -949,6 +1045,8 @@ export default function QuoteBuilderPage() {
         } as QuoteItem;
       });
 
+      const loadedShippingTotal = asNumber(data.shipping);
+
       const draft: Quote = {
         id: data.id,
         quoteNumber: data.quoteNumber ?? "",
@@ -962,7 +1060,7 @@ export default function QuoteBuilderPage() {
         notes: data.notes ?? null,
         subtotal: 0,
         discountTotal: 0,
-        shippingTotal: asNumber(data.shipping),
+        shippingTotal: loadedShippingTotal,
         shippingLabel: data.shippingLabel ?? null,
         shippingState: data.shippingState ?? null,
         shippingZip: data.shippingZip ?? null,
@@ -1529,15 +1627,56 @@ export default function QuoteBuilderPage() {
                     ? "Session Ready"
                     : "Open Live Website Session"}
               </button>
+              {liveSessionUrl ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={openLiveCartPage}
+                  disabled={openLiveCartLoading || identifyLoading}
+                  style={{ marginRight: 8 }}
+                >
+                  {openLiveCartLoading ? "Opening cart…" : "Open Cart"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn primary"
                 onClick={copyCartViaServer}
-                disabled={scrapeCartServerLoading || openCartSessionLoading || identifyLoading}
+                disabled={
+                  scrapeCartServerLoading ||
+                  openCartSessionLoading ||
+                  openLiveCartLoading ||
+                  identifyLoading
+                }
               >
                 {scrapeCartServerLoading ? "Reading live cart…" : "Add Products From Cart"}
               </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={clearStorefrontCart}
+                disabled={
+                  clearCartLoading ||
+                  scrapeCartServerLoading ||
+                  openCartSessionLoading ||
+                  openLiveCartLoading ||
+                  identifyLoading
+                }
+                style={{ marginLeft: 8 }}
+              >
+                {clearCartLoading ? "Clearing cart..." : "Clear Cart"}
+              </button>
             </div>
+            {clearCartMessage ? (
+              <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>
+                {clearCartMessage}
+              </div>
+            ) : null}
+            {clearCartError ? (
+              <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--danger, #b42318)" }}>
+                {clearCartError}
+              </div>
+            ) : null}
             {liveSessionUrl ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                 Live session page: {liveSessionUrl}
@@ -1595,20 +1734,36 @@ export default function QuoteBuilderPage() {
               <span>Subtotal</span>
               <span>{currency(totals.subtotal)}</span>
             </div>
-            <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>
-                Shipping
-                {formatShippingDestination(quote.shippingState, quote.shippingZip) ? (
-                  <span className="muted" style={{ marginLeft: 8, fontWeight: 400 }}>
-                    {formatShippingDestination(quote.shippingState, quote.shippingZip)}
-                  </span>
-                ) : null}
-              </span>
+            <div
+              className="totals-row"
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ flexShrink: 0 }}>Shipping</span>
               <input
-                value={quote.shippingLabel ?? String(totals.shippingTotal)}
-                onChange={(e) => applyChargeInput("shipping", e.target.value)}
-                placeholder="e.g. 72.36 or TBD"
-                style={{ maxWidth: 120, textAlign: "right" }}
+                type="text"
+                value={shippingDestinationDisplay}
+                onFocus={() => setShippingDestinationDraft(shippingDestinationText)}
+                onBlur={() => {
+                  applyShippingDestination(shippingDestinationDraft ?? shippingDestinationText);
+                  setShippingDestinationDraft(null);
+                }}
+                onChange={(e) => setShippingDestinationDraft(e.target.value)}
+                placeholder="e.g. NJ, 07045"
+                aria-label="Shipping destination"
+                style={{ flex: 1, minWidth: 0, maxWidth: 160 }}
+              />
+              <input
+                value={String(totals.shippingTotal)}
+                onChange={(e) => applyShippingAmount(e.target.value)}
+                placeholder="0.00"
+                aria-label="Shipping amount"
+                style={{ maxWidth: 120, textAlign: "right", flexShrink: 0 }}
               />
             </div>
             <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>

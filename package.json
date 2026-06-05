@@ -55,6 +55,7 @@
   "build": {
     "appId": "com.xyzdisplays.customquote",
     "productName": "Custom Quote",
+    "icon": "public/images/favicon.ico",
     "directories": {
       "output": "dist-electron"
     },
@@ -77,6 +78,7 @@
       }
     ],
     "win": {
+      "icon": "public/images/favicon.ico",
       "target": [
         "nsis"
       ]

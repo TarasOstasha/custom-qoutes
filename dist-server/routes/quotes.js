@@ -212,6 +212,27 @@ router.post("/cart-session/close", async (_req, res) => {
         return res.status(500).json({ error: message });
     }
 });
+router.post("/clear-cart", async (req, res) => {
+    try {
+        const body = req.body;
+        const cartUrl = body?.cartUrl?.trim();
+        const result = await (0, scrapeStorefrontCart_1.clearVolusionStorefrontCart)({
+            ...(cartUrl ? { cartUrl } : {}),
+        });
+        const status = result.cartEmpty ? 200 : 502;
+        return res.status(status).json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to clear cart";
+        return res.status(500).json({
+            success: false,
+            removedCount: 0,
+            cartEmpty: false,
+            method: "none",
+            error: message,
+        });
+    }
+});
 router.post("/identify-user", async (req, res) => {
     try {
         const cartId = String(req.body?.cartId ?? "").trim() ||
@@ -265,6 +286,8 @@ const createQuote = async (req, res) => {
             shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
             shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
             shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
+            shippingOptionsJson: pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null,
+            selectedShippingValue: toStringOrNull(pickBodyValue(body, "selected_shipping_value", "selectedShippingValue")),
             taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
             taxAmount: toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount")),
             taxLabel: toStringOrNull(pickBodyValue(body, "tax_label", "taxLabel")),
@@ -356,6 +379,13 @@ router.put("/:id", async (req, res) => {
         }
         if (pickBodyValue(body, "shipping_zip", "shippingZip") !== undefined) {
             updates.shippingZip = toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip"));
+        }
+        if (pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") !== undefined) {
+            updates.shippingOptionsJson =
+                pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null;
+        }
+        if (pickBodyValue(body, "selected_shipping_value", "selectedShippingValue") !== undefined) {
+            updates.selectedShippingValue = toStringOrNull(pickBodyValue(body, "selected_shipping_value", "selectedShippingValue"));
         }
         if (pickBodyValue(body, "tax_rate", "taxRate") !== undefined) {
             updates.taxRate = toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate"));

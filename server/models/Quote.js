@@ -81,6 +81,16 @@ Quote.init(
       allowNull: true,
       field: "shipping_zip",
     },
+    shippingOptionsJson: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      field: "shipping_options_json",
+    },
+    selectedShippingValue: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "selected_shipping_value",
+    },
     taxRate: {
       type: DataTypes.DECIMAL(5, 3),
       allowNull: true,

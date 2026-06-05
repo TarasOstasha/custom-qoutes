@@ -18,6 +18,8 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare shippingLabel: string | null;
   declare shippingState: string | null;
   declare shippingZip: string | null;
+  declare shippingOptionsJson: unknown | null;
+  declare selectedShippingValue: string | null;
   declare taxRate: string | null;
   declare taxAmount: string | null;
   declare taxLabel: string | null;
@@ -102,6 +104,16 @@ Quote.init(
       type: DataTypes.STRING,
       allowNull: true,
       field: "shipping_zip",
+    },
+    shippingOptionsJson: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      field: "shipping_options_json",
+    },
+    selectedShippingValue: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "selected_shipping_value",
     },
     taxRate: {
       type: DataTypes.DECIMAL(5, 3),

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.extractCartPayloadInBrowser = extractCartPayloadInBrowser;
 exports.normalizeCartPayloadImages = normalizeCartPayloadImages;
 exports.extractCartFromPage = extractCartFromPage;
+const extractShippingSpeedChoiceInBrowser_1 = require("./extractShippingSpeedChoiceInBrowser");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
 const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
 /**
@@ -448,6 +449,11 @@ async function extractCartPayloadInBrowser() {
     let taxTotal = 0;
     let shippingTotal = 0;
     let shippingFromSelectedOption = false;
+    const shippingOptions = [];
+    let selectedShippingValue = "";
+    function isPlaceholderShippingOption(label) {
+        return /^please\s*select/i.test(label) || /^select\s+/i.test(label);
+    }
     // Volusion: tax row variants used in cart summary.
     const volTaxRow = document.querySelector("tr.v65-cart-tax-row, tr.v65-cart-tax-parent-row");
     let taxDescription = "";
@@ -479,21 +485,136 @@ async function extractCartPayloadInBrowser() {
         return "";
     }
     taxDescription = extractTaxDescription();
-    // Preferred shipping source: selected shipping method option text (e.g. "UPS Ground $97.23").
-    const shippingSelect = document.querySelector('select[name="ShippingSpeedChoice"], select#ShippingSpeedChoice');
+    function optionLabel(option) {
+        return (option.label || option.textContent || "").replace(/\s+/g, " ").trim();
+    }
+    function parseShippingOptionPrice(label) {
+        const fromDollar = parseMoney(label);
+        if (fromDollar > 0)
+            return fromDollar;
+        const trailing = label.match(/([\d,]+\.\d{2})\s*$/);
+        if (trailing?.[1]) {
+            const n = parseFloat(trailing[1].replace(/,/g, ""));
+            return Number.isFinite(n) ? n : 0;
+        }
+        return 0;
+    }
+    function looksLikeShippingOptionLabel(label) {
+        if (!label || isPlaceholderShippingOption(label))
+            return false;
+        if (/\$\s*[\d,]+(?:\.\d{1,2})?/.test(label))
+            return true;
+        if (/shipping|ground|overnight|freight|\b\d\s*day\b|next\s*day|2\s*day|3\s*day|ups|fedex|usps/i.test(label) &&
+            /\b[\d,]+\.\d{2}\b/.test(label)) {
+            return true;
+        }
+        return false;
+    }
+    function countPricedShippingOptions(select) {
+        return Array.from(select.options).filter((option) => looksLikeShippingOptionLabel(optionLabel(option)))
+            .length;
+    }
+    function isVolusionPlaceholderOption(option, label) {
+        const rawValue = (option.value ?? "").trim();
+        return rawValue === "0" || isPlaceholderShippingOption(label);
+    }
+    function scoreShippingSelect(select) {
+        const pricedCount = countPricedShippingOptions(select);
+        if (pricedCount <= 0)
+            return -1;
+        let score = pricedCount;
+        if (select.name === "ShippingSpeedChoice" || select.id === "ShippingSpeedChoice")
+            score += 100;
+        if (select.closest(".v65-cart-shipping-details-input-cell, #DisplayShippingSpeedChoicesTD, #v65-cart-shipping-details, #v65-cart-shipping-details-wrapper")) {
+            score += 50;
+        }
+        return score;
+    }
+    function findShippingSpeedSelect() {
+        const prioritizedSelectors = [
+            // xyzdisplays / Volusion cart: td.v65-cart-shipping-details-input-cell > select[name="ShippingSpeedChoice"]
+            ".v65-cart-shipping-details-input-cell select[name='ShippingSpeedChoice']",
+            'select.browser-default[name="ShippingSpeedChoice"]',
+            'select[name="ShippingSpeedChoice"]',
+            "select#ShippingSpeedChoice",
+            ".v65-cart-shipping-details-input-cell select",
+            "#DisplayShippingSpeedChoicesTD select",
+            "#v65-cart-shipping-details select",
+            "#v65-cart-shipping-details-wrapper select",
+            ".v65-cart-shipping select",
+        ];
+        const seen = new Set();
+        let best = null;
+        let bestScore = -1;
+        const consider = (select) => {
+            if (!select || seen.has(select))
+                return;
+            seen.add(select);
+            const score = scoreShippingSelect(select);
+            if (score > bestScore) {
+                best = select;
+                bestScore = score;
+            }
+        };
+        for (const selector of prioritizedSelectors) {
+            consider(document.querySelector(selector));
+        }
+        const markerPattern = /shipping\s+rates?|calculate\s+shipping/i;
+        for (const marker of Array.from(document.querySelectorAll("td, th, label, b, strong, legend, h3, h4"))) {
+            const text = (marker.textContent ?? "").replace(/\s+/g, " ").trim();
+            if (!text || text.length > 120 || !markerPattern.test(text))
+                continue;
+            let node = marker;
+            for (let depth = 0; depth < 6 && node; depth += 1) {
+                consider(node.querySelector("select"));
+                node = node.parentElement;
+            }
+        }
+        for (const select of Array.from(document.querySelectorAll("select"))) {
+            consider(select);
+        }
+        return bestScore >= 0 ? best : null;
+    }
+    // Preferred shipping source: shipping speed dropdown near "Shipping Rates" / "CALCULATE SHIPPING".
+    const shippingSelect = findShippingSpeedSelect();
     if (shippingSelect) {
+        Array.from(shippingSelect.options).forEach((option, index) => {
+            const label = optionLabel(option);
+            if (isVolusionPlaceholderOption(option, label))
+                return;
+            if (!looksLikeShippingOptionLabel(label))
+                return;
+            const price = parseShippingOptionPrice(label);
+            if (price <= 0)
+                return;
+            const value = (option.value ?? "").trim() || `shipping_${index}`;
+            shippingOptions.push({ value, label, price });
+        });
         const selectedByIndex = shippingSelect.selectedIndex >= 0 ? shippingSelect.options.item(shippingSelect.selectedIndex) : null;
         const selectedByAttr = shippingSelect.querySelector("option[selected]");
         const selected = selectedByIndex ?? selectedByAttr;
-        const selectedText = (selected?.textContent ?? "").trim();
-        const looksPlaceholder = /^please\s*select/i.test(selectedText) ||
-            /^select\s+/i.test(selectedText);
-        const hasPriceInText = /\$\s*[\d,]+(?:\.\d{1,2})?/.test(selectedText);
+        const selectedText = selected ? optionLabel(selected) : "";
+        const looksPlaceholder = isPlaceholderShippingOption(selectedText);
+        const hasPriceInText = looksLikeShippingOptionLabel(selectedText);
+        if (selected && !looksPlaceholder) {
+            const candidateValue = (selected.value ?? "").trim() || `shipping_${shippingSelect.selectedIndex}`;
+            const byValue = shippingOptions.find((option) => option.value === candidateValue);
+            const byLabel = shippingOptions.find((option) => option.label === selectedText);
+            const match = byValue ?? byLabel;
+            if (match) {
+                selectedShippingValue = match.value;
+            }
+        }
         if (!looksPlaceholder && hasPriceInText) {
-            const v = parseMoney(selectedText);
+            const v = parseShippingOptionPrice(selectedText);
             if (v > 0) {
                 shippingTotal = v;
                 shippingFromSelectedOption = true;
+                if (!selectedShippingValue) {
+                    const byLabel = shippingOptions.find((option) => option.label === selectedText);
+                    const byPrice = shippingOptions.find((option) => option.price != null && Math.abs(option.price - v) < 0.02);
+                    selectedShippingValue = byLabel?.value ?? byPrice?.value ?? "";
+                }
             }
         }
     }
@@ -632,12 +753,20 @@ async function extractCartPayloadInBrowser() {
         return { state: "", zip: "" };
     }
     const { state: shippingState, zip: shippingZip } = extractShippingDestination();
+    const shippingOptionsMarked = shippingOptions.map((option) => ({
+        ...option,
+        selected: Boolean(selectedShippingValue && option.value === selectedShippingValue),
+    }));
+    const selectedShippingOption = shippingOptionsMarked.find((option) => option.selected) ?? null;
     return {
         cartId,
         cartItems,
         shippingTotal,
         ...(shippingState ? { shippingState } : {}),
         ...(shippingZip ? { shippingZip } : {}),
+        ...(shippingOptionsMarked.length ? { shippingOptions: shippingOptionsMarked } : {}),
+        ...(selectedShippingValue ? { selectedShippingValue } : {}),
+        ...(selectedShippingOption ? { selectedShippingOption } : {}),
         taxTotal,
         ...(taxDescription ? { taxDescription } : {}),
         grandTotal,
@@ -668,5 +797,10 @@ async function extractCartFromPage() {
             grandTotal: 0,
         };
     }
-    return normalizeCartPayloadImages(await extractCartPayloadInBrowser());
+    const payload = normalizeCartPayloadImages(await extractCartPayloadInBrowser());
+    const shippingScrape = (0, extractShippingSpeedChoiceInBrowser_1.extractShippingSpeedChoiceInBrowser)();
+    if (shippingScrape?.shippingOptions.length) {
+        (0, extractShippingSpeedChoiceInBrowser_1.applyShippingSpeedChoiceToPayload)(payload, shippingScrape);
+    }
+    return payload;
 }

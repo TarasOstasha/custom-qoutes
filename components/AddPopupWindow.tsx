@@ -22,7 +22,7 @@ const AddPopupWindow: FC<Props> = ({ onAdd }) => {
   return (
     <>
       <button onClick={() => setOpen(true)} style={styles.openBtn}>
-        + Add Product
+        + Add Product Volusion
       </button>
 
       {open && (

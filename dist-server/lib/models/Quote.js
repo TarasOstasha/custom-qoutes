@@ -81,6 +81,16 @@ Quote.init({
         allowNull: true,
         field: "shipping_zip",
     },
+    shippingOptionsJson: {
+        type: sequelize_1.DataTypes.JSONB,
+        allowNull: true,
+        field: "shipping_options_json",
+    },
+    selectedShippingValue: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "selected_shipping_value",
+    },
     taxRate: {
         type: sequelize_1.DataTypes.DECIMAL(5, 3),
         allowNull: true,

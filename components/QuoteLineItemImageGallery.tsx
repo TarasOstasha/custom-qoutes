@@ -1,4 +1,5 @@
 import { normalizeProductImageUrl } from "../lib/normalizeProductImageUrl";
+import { formatQuoteLineImageCaption } from "../lib/formatQuoteLineDescription";
 import type { QuoteItem } from "../lib/mockQuote";
 
 type Props = {
@@ -55,7 +56,7 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
               href={href}
               target="_blank"
               rel="noreferrer"
-              title={item.name}
+              title={formatQuoteLineImageCaption(item) || item.name}
               style={{ display: "inline-block" }}
             >
               <img
@@ -74,23 +75,28 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
             </a>
               );
             })()}
-            {!isPreview ? (
+            {(() => {
+              const caption = formatQuoteLineImageCaption(item);
+              if (!caption) return null;
+              return (
               <div
                 className="muted"
                 style={{
                   marginTop: 4,
-                  fontSize: 11,
-                  lineHeight: 1.2,
+                  fontSize: isPreview ? 12 : 11,
+                  lineHeight: 1.3,
                   maxWidth: imgW + 24,
                   overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  display: "-webkit-box",
+                  WebkitLineClamp: isPreview ? 4 : 2,
+                  WebkitBoxOrient: "vertical",
                 }}
-                title={item.name}
+                title={caption}
               >
-                {item.sku || item.name}
+                {caption}
               </div>
-            ) : null}
+              );
+            })()}
           </div>
         ))
       )}

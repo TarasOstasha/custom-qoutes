@@ -60,6 +60,16 @@ app.post("/api/cart/open-session", async (_req, res) => {
         return res.status(500).json({ error: message });
     }
 });
+app.post("/api/cart/open-cart", async (_req, res) => {
+    try {
+        const result = await (0, scrapeStorefrontCart_1.openVisibleVolusionCartSession)();
+        return res.json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to open cart in live session";
+        return res.status(500).json({ error: message });
+    }
+});
 app.use("/api/uploads", express_1.default.static((0, uploadsDir_1.getUploadsDir)()));
 app.use("/api/upload-image", uploadImage_1.default);
 app.use("/api/quotes", quotes_1.default);

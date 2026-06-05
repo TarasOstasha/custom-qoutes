@@ -123,6 +123,14 @@ function startWebInProcess() {
   require(standaloneEntry);
 }
 
+function getAppIconPath() {
+  const iconPath = isDev
+    ? path.join(devRoot, "public", "images", "favicon.ico")
+    : path.join(prodAppRoot, "public", "images", "favicon.ico");
+
+  return fs.existsSync(iconPath) ? iconPath : undefined;
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1400,
@@ -130,6 +138,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
+    icon: getAppIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -171,6 +180,7 @@ app.whenReady().then(async () => {
       width: 980,
       height: 700,
       autoHideMenuBar: true,
+      icon: getAppIconPath(),
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

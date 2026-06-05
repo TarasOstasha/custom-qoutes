@@ -65,3 +65,5 @@ tests/httpRequests/*.http
 
 *.yml
 dist-electron/
+
+Insrt.md

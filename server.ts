@@ -3,7 +3,7 @@ import { DataTypes } from "sequelize";
 import quotesRouter from "./routes/quotes";
 import uploadImageRouter from "./routes/uploadImage";
 import cors from "cors";
-import { openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
+import { openVisibleVolusionCartSession, openVisibleVolusionHomepageSession } from "./services/scrapeStorefrontCart";
 import { sequelize } from "./lib/models";
 import { getUploadsDir } from "./lib/uploadsDir";
 
@@ -64,6 +64,16 @@ app.post("/api/cart/open-session", async (_req, res) => {
     return res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to open live website session";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/cart/open-cart", async (_req, res) => {
+  try {
+    const result = await openVisibleVolusionCartSession();
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to open cart in live session";
     return res.status(500).json({ error: message });
   }
 });
