@@ -14,3 +14,5 @@ npm run electron:dist - build a new one
 \\192.168.1.155\home
 account: OfficeNAS
 pass: Xyz33333
+
+tailscale connection db: 100.68.127.126

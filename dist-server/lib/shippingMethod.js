@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_SHIPPING_METHOD = exports.SHIPPING_METHOD_OPTIONS = void 0;
+exports.DEFAULT_SHIPPING_METHOD = exports.SHIPPING_METHOD_OPTIONS = exports.CUSTOM_SHIPPING_METHOD_VALUE = void 0;
 exports.mergeCartShippingOptions = mergeCartShippingOptions;
+exports.formatShippingOptionDisplayLabel = formatShippingOptionDisplayLabel;
 exports.buildShippingMethodSelectOptions = buildShippingMethodSelectOptions;
 exports.formatShippingMethodLabel = formatShippingMethodLabel;
 exports.serializeShippingMethodForDb = serializeShippingMethodForDb;
@@ -10,18 +11,19 @@ exports.parseShippingOptionsFromDb = parseShippingOptionsFromDb;
 exports.formatShippingRowAnnotation = formatShippingRowAnnotation;
 exports.formatShippingTotalLabel = formatShippingTotalLabel;
 exports.findCartShippingOption = findCartShippingOption;
+exports.shippingPricesMatch = shippingPricesMatch;
+exports.findShippingOptionByPrice = findShippingOptionByPrice;
+exports.reconcileShippingSelectionWithTotal = reconcileShippingSelectionWithTotal;
+exports.resolveShippingMethodFromShippingOptions = resolveShippingMethodFromShippingOptions;
+exports.resolveEffectiveShippingMethod = resolveEffectiveShippingMethod;
 exports.resolveShippingMethodFromCartPayload = resolveShippingMethodFromCartPayload;
 exports.cartPayloadHasShippingChoice = cartPayloadHasShippingChoice;
 const shippingDestination_1 = require("./shippingDestination");
-exports.SHIPPING_METHOD_OPTIONS = [
-    { value: "0", label: "Please Select" },
-    { value: "1", label: "Ground" },
-    { value: "2", label: "3 Day" },
-    { value: "3", label: "2 Day" },
-    { value: "4", label: "Next Day" },
-    { value: "5", label: "Over Night" },
-    { value: "6", label: "Custom" },
-];
+/** Manual builder option — always rendered last in the shipping dropdown. */
+exports.CUSTOM_SHIPPING_METHOD_VALUE = "6";
+/** Static builder options (cart-imported methods are inserted before Custom). */
+exports.SHIPPING_METHOD_OPTIONS = [{ value: exports.CUSTOM_SHIPPING_METHOD_VALUE, label: "Custom" }];
+/** Unset / please-select sentinel — not shown as a dropdown row when cart supplies options. */
 exports.DEFAULT_SHIPPING_METHOD = "0";
 function mergeCartShippingOptions(existing, incoming) {
     const merged = new Map();
@@ -35,17 +37,32 @@ function mergeCartShippingOptions(existing, incoming) {
     }
     return Array.from(merged.values());
 }
-/** Static builder options plus any cart-imported options (cart values appended). */
+/** Compact dropdown label — strips dollar/trailing amounts and the word "Shipping". */
+function formatShippingOptionDisplayLabel(label) {
+    const trimmed = label.trim();
+    if (!trimmed)
+        return trimmed;
+    const cleaned = trimmed
+        .replace(/\$\s*[\d,]+(?:\.\d{2})?/g, "")
+        .replace(/[\d,]+\.\d{2}\s*$/, "")
+        .replace(/\bshipping\b/gi, "")
+        .replace(/\s*[-–—]+\s*/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+    return cleaned || trimmed;
+}
+/** Cart options first, then Custom always last. */
 function buildShippingMethodSelectOptions(cartOptions) {
     const staticValues = new Set(exports.SHIPPING_METHOD_OPTIONS.map((option) => option.value));
-    const staticOptions = exports.SHIPPING_METHOD_OPTIONS.map((option) => ({
-        value: option.value,
-        label: option.label,
-    }));
-    const extra = (cartOptions ?? [])
+    const leadingStatic = exports.SHIPPING_METHOD_OPTIONS.filter((option) => option.value !== exports.CUSTOM_SHIPPING_METHOD_VALUE).map((option) => ({ value: option.value, label: option.label }));
+    const cart = (cartOptions ?? [])
         .filter((option) => option.value && !staticValues.has(option.value))
         .map((option) => ({ value: option.value, label: option.label }));
-    return [...staticOptions, ...extra];
+    const customOption = exports.SHIPPING_METHOD_OPTIONS.find((option) => option.value === exports.CUSTOM_SHIPPING_METHOD_VALUE);
+    const trailingCustom = customOption
+        ? [{ value: customOption.value, label: customOption.label }]
+        : [];
+    return [...leadingStatic, ...cart, ...trailingCustom];
 }
 function formatShippingMethodLabel(value, cartOptions) {
     if (!value || value === exports.DEFAULT_SHIPPING_METHOD)
@@ -106,8 +123,100 @@ function findCartShippingOption(cartOptions, value) {
         return null;
     return cartOptions?.find((option) => option.value === value) ?? null;
 }
+function shippingPricesMatch(a, b, tolerance = 0.02) {
+    const left = Math.round(a * 100) / 100;
+    const right = Math.round(b * 100) / 100;
+    return Math.abs(left - right) <= tolerance;
+}
+/** Match the applied cart shipping total to a single dropdown option price. */
+function findShippingOptionByPrice(shippingOptions, shippingTotal) {
+    if (!shippingOptions?.length || !(shippingTotal > 0))
+        return null;
+    const matches = shippingOptions.filter((option) => option.price != null &&
+        option.price > 0 &&
+        shippingPricesMatch(option.price, shippingTotal));
+    return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+function markSelectedShippingOption(shippingOptions, selectedValue) {
+    return shippingOptions.map((option) => ({
+        ...option,
+        selected: Boolean(selectedValue && option.value === selectedValue),
+    }));
+}
+/** Align selected method with the shipping total shown in cart totals when they disagree. */
+function reconcileShippingSelectionWithTotal(shippingOptions, shippingTotal, selectedValue) {
+    const options = shippingOptions ?? [];
+    const byPrice = findShippingOptionByPrice(options, shippingTotal);
+    if (byPrice?.value) {
+        const current = selectedValue?.trim();
+        const currentOption = current ? findCartShippingOption(options, current) : null;
+        const currentPrice = currentOption?.price ?? 0;
+        const priceMismatch = shippingTotal > 0 &&
+            currentPrice > 0 &&
+            !shippingPricesMatch(currentPrice, shippingTotal);
+        if (!current || priceMismatch || current === exports.DEFAULT_SHIPPING_METHOD) {
+            const marked = markSelectedShippingOption(options, byPrice.value);
+            return {
+                shippingOptions: marked,
+                selectedShippingValue: byPrice.value,
+                selectedShippingOption: { ...byPrice, selected: true },
+            };
+        }
+    }
+    const resolvedValue = selectedValue?.trim() || "";
+    const selectedShippingOption = findCartShippingOption(options, resolvedValue) ??
+        options.find((option) => option.selected) ??
+        null;
+    return {
+        shippingOptions: resolvedValue
+            ? markSelectedShippingOption(options, resolvedValue)
+            : options.length
+                ? options
+                : null,
+        selectedShippingValue: resolvedValue,
+        selectedShippingOption,
+    };
+}
+/** Pick the cart-marked selection from stored shipping options. */
+function resolveShippingMethodFromShippingOptions(shippingOptions, fallback = exports.DEFAULT_SHIPPING_METHOD, shippingTotal) {
+    if (shippingTotal != null && shippingTotal > 0) {
+        const byPrice = findShippingOptionByPrice(shippingOptions, shippingTotal);
+        if (byPrice?.value)
+            return byPrice.value;
+    }
+    const selected = shippingOptions?.find((option) => option.selected)?.value?.trim();
+    if (selected && selected !== exports.DEFAULT_SHIPPING_METHOD)
+        return selected;
+    const realOptions = (shippingOptions ?? []).filter((option) => option.value && option.value !== exports.DEFAULT_SHIPPING_METHOD);
+    if (realOptions.length === 1)
+        return realOptions[0]?.value ?? fallback;
+    return fallback;
+}
+/** Builder select value — prefers explicit method when it matches total, else price match. */
+function resolveEffectiveShippingMethod(quote, fallback = exports.DEFAULT_SHIPPING_METHOD) {
+    const method = quote.shippingMethod?.trim();
+    if (method && method !== exports.DEFAULT_SHIPPING_METHOD) {
+        const option = findCartShippingOption(quote.shippingOptions, method);
+        const total = quote.shippingTotal ?? 0;
+        if (total > 0 &&
+            option?.price != null &&
+            option.price > 0 &&
+            !shippingPricesMatch(option.price, total)) {
+            const byPrice = findShippingOptionByPrice(quote.shippingOptions, total);
+            if (byPrice?.value)
+                return byPrice.value;
+        }
+        return method;
+    }
+    return resolveShippingMethodFromShippingOptions(quote.shippingOptions, fallback, quote.shippingTotal);
+}
 /** Default shipping select value after importing a Volusion cart payload. */
 function resolveShippingMethodFromCartPayload(payload, fallback = exports.DEFAULT_SHIPPING_METHOD) {
+    if (payload.shippingTotal != null && payload.shippingTotal > 0) {
+        const byPrice = findShippingOptionByPrice(payload.shippingOptions, payload.shippingTotal);
+        if (byPrice?.value)
+            return byPrice.value;
+    }
     const candidates = [
         payload.selectedShippingValue?.trim(),
         payload.selectedShippingOption?.value?.trim(),

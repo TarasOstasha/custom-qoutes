@@ -5,6 +5,7 @@ exports.extractShippingSpeedChoiceInBrowser = extractShippingSpeedChoiceInBrowse
 exports.applyShippingSpeedChoiceToPayload = applyShippingSpeedChoiceToPayload;
 exports.scrapeShippingSpeedChoiceFromPage = scrapeShippingSpeedChoiceFromPage;
 exports.enrichPayloadWithShippingSpeedChoice = enrichPayloadWithShippingSpeedChoice;
+const shippingMethod_1 = require("./shippingMethod");
 exports.SHIPPING_SPEED_SELECT_SELECTOR = 'select[name="ShippingSpeedChoice"], select.browser-default[name="ShippingSpeedChoice"]';
 /**
  * Self-contained Volusion shipping scrape for Playwright `page.evaluate()`.
@@ -131,7 +132,10 @@ function applyShippingSpeedChoiceToPayload(payload, scrape) {
         payload.selectedShippingOption = scrape.selectedShippingOption;
     }
     if (scrape.shippingTotal > 0) {
-        payload.shippingTotal = scrape.shippingTotal;
+        const summaryTotal = payload.shippingTotal ?? 0;
+        if (summaryTotal === 0 || (0, shippingMethod_1.shippingPricesMatch)(summaryTotal, scrape.shippingTotal)) {
+            payload.shippingTotal = scrape.shippingTotal;
+        }
     }
 }
 /** Playwright locator fallback when in-page evaluate misses `option[selected]`. */

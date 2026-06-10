@@ -4,6 +4,7 @@ exports.extractCartPayloadInBrowser = extractCartPayloadInBrowser;
 exports.normalizeCartPayloadImages = normalizeCartPayloadImages;
 exports.extractCartFromPage = extractCartFromPage;
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
+const shippingMethod_1 = require("./shippingMethod");
 const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
 /**
  * Full cart DOM parse — self-contained so Playwright can `page.evaluate(this)`.
@@ -724,7 +725,11 @@ async function extractCartPayloadInBrowser() {
     })();
     let resolvedShippingTotal = shippingTotal;
     if (shippingSpeedExtras?.shippingTotal && shippingSpeedExtras.shippingTotal > 0) {
-        resolvedShippingTotal = shippingSpeedExtras.shippingTotal;
+        const dropdownTotal = shippingSpeedExtras.shippingTotal;
+        if (shippingTotal === 0 ||
+            Math.abs(Math.round(shippingTotal * 100) - Math.round(dropdownTotal * 100)) <= 2) {
+            resolvedShippingTotal = dropdownTotal;
+        }
     }
     return {
         cartId,
@@ -771,6 +776,14 @@ function normalizeCartPayloadImages(payload) {
     }
     if (payload.selectedShippingOption !== undefined) {
         normalized.selectedShippingOption = payload.selectedShippingOption;
+    }
+    if (normalized.shippingOptions?.length && normalized.shippingTotal > 0) {
+        const reconciled = (0, shippingMethod_1.reconcileShippingSelectionWithTotal)(normalized.shippingOptions, normalized.shippingTotal, normalized.selectedShippingValue ?? normalized.selectedShippingOption?.value);
+        normalized.shippingOptions = reconciled.shippingOptions ?? normalized.shippingOptions;
+        if (reconciled.selectedShippingValue) {
+            normalized.selectedShippingValue = reconciled.selectedShippingValue;
+            normalized.selectedShippingOption = reconciled.selectedShippingOption;
+        }
     }
     return normalized;
 }
