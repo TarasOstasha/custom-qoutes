@@ -15,10 +15,18 @@ import {
   parseShippingDestinationText,
 } from "../../lib/shippingDestination";
 import {
+  buildShippingMethodSelectOptions,
+  cartPayloadHasShippingChoice,
   DEFAULT_SHIPPING_METHOD,
+  findCartShippingOption,
+  mergeCartShippingOptions,
   parseShippingMethodFromDb,
+  parseShippingOptionsFromDb,
+  resolveEffectiveShippingMethod,
+  resolveShippingMethodFromCartPayload,
+  resolveShippingMethodFromShippingOptions,
+  reconcileShippingSelectionWithTotal,
   serializeShippingMethodForDb,
-  SHIPPING_METHOD_OPTIONS,
 } from "../../lib/shippingMethod";
 import {
   formatTaxRatePercentInput,
@@ -115,6 +123,8 @@ type ApiQuote = {
   shipping: number | string | null;
   shippingLabel?: string | null;
   shippingMethod?: string | null;
+  shippingOptionsJson?: unknown;
+  shipping_options_json?: unknown;
   shippingState?: string | null;
   shippingZip?: string | null;
   taxRate: number | string | null;
@@ -152,7 +162,17 @@ export default function QuoteBuilderPage() {
   useLayoutEffect(() => {
     const stored = loadQuoteFromPreviewStorage();
     if (stored) {
-      setQuote(stored);
+      setQuote({
+        ...stored,
+        shippingMethod: resolveEffectiveShippingMethod(stored),
+        shippingOptions: stored.shippingOptions?.length
+          ? reconcileShippingSelectionWithTotal(
+              stored.shippingOptions,
+              stored.shippingTotal,
+              stored.shippingMethod,
+            ).shippingOptions ?? stored.shippingOptions
+          : stored.shippingOptions ?? null,
+      });
       setLoadedQuoteId(dbQuoteIdPattern.test(stored.id) ? stored.id : null);
       skipNextPersist.current = true;
     }
@@ -191,6 +211,40 @@ export default function QuoteBuilderPage() {
     () => recalcQuote(quote.items, { shippingTotal: quote.shippingTotal, taxTotal: quote.taxTotal }),
     [quote.items, quote.shippingTotal, quote.taxTotal]
   );
+  const shippingMethodSelectOptions = useMemo(
+    () => buildShippingMethodSelectOptions(quote.shippingOptions),
+    [quote.shippingOptions],
+  );
+  const effectiveShippingMethod = useMemo(
+    () => resolveEffectiveShippingMethod(quote),
+    [quote.shippingMethod, quote.shippingOptions, quote.shippingTotal],
+  );
+
+  useEffect(() => {
+    setQuote((prev) => {
+      const resolved = resolveEffectiveShippingMethod(prev);
+      const current = prev.shippingMethod ?? DEFAULT_SHIPPING_METHOD;
+      if (resolved === current) return prev;
+      const cartOption = findCartShippingOption(prev.shippingOptions, resolved);
+      const nextShippingTotal =
+        cartOption?.price != null && cartOption.price > 0 ? cartOption.price : prev.shippingTotal;
+      return {
+        ...prev,
+        shippingMethod: resolved,
+        shippingOptions: prev.shippingOptions?.length
+          ? reconcileShippingSelectionWithTotal(
+              prev.shippingOptions,
+              nextShippingTotal,
+              resolved,
+            ).shippingOptions ?? prev.shippingOptions
+          : prev.shippingOptions ?? null,
+        ...recalcQuotePreservingTaxRate(prev, prev.items, {
+          shippingTotal: nextShippingTotal,
+          taxTotal: prev.taxTotal,
+        }),
+      };
+    });
+  }, [quote.shippingOptions, quote.shippingTotal]);
 
   const applyChargeInput = (field: "tax", rawValue: string) => {
     const trimmed = rawValue.trim();
@@ -637,6 +691,32 @@ export default function QuoteBuilderPage() {
       const items = [...prev.items, ...mappedItems];
       const taxRatePercent = parsedTaxRate ?? prev.taxRatePercent ?? null;
       const nextShippingTotal = payload.shippingTotal ?? prev.shippingTotal;
+      const shippingOptions = mergeCartShippingOptions(prev.shippingOptions, payload.shippingOptions);
+      const reconciled = reconcileShippingSelectionWithTotal(
+        shippingOptions.length ? shippingOptions : payload.shippingOptions,
+        nextShippingTotal,
+        payload.selectedShippingValue ?? payload.selectedShippingOption?.value,
+      );
+      const reconciledOptions = reconciled.shippingOptions ?? shippingOptions;
+      const cartResolved = cartPayloadHasShippingChoice(payload)
+        ? resolveShippingMethodFromCartPayload({
+            ...payload,
+            shippingOptions: reconciledOptions,
+            selectedShippingValue: reconciled.selectedShippingValue,
+            selectedShippingOption: reconciled.selectedShippingOption,
+          }, "")
+        : "";
+      const optionsResolved = resolveShippingMethodFromShippingOptions(
+        reconciledOptions,
+        "",
+        nextShippingTotal,
+      );
+      const nextShippingMethod =
+        cartResolved ||
+        optionsResolved ||
+        (prev.shippingMethod && prev.shippingMethod !== DEFAULT_SHIPPING_METHOD
+          ? prev.shippingMethod
+          : DEFAULT_SHIPPING_METHOD);
 
       return {
         ...prev,
@@ -650,6 +730,8 @@ export default function QuoteBuilderPage() {
           }
         ),
         shippingLabel: payload.shippingLabel || prev.shippingLabel || null,
+        shippingOptions: reconciledOptions.length ? reconciledOptions : prev.shippingOptions ?? null,
+        shippingMethod: nextShippingMethod,
         shippingState: payload.shippingState?.trim() || prev.shippingState || null,
         shippingZip: payload.shippingZip?.trim() || prev.shippingZip || null,
         taxDescription: taxDescription || prev.taxDescription || null,
@@ -720,7 +802,7 @@ export default function QuoteBuilderPage() {
       const payload = await extractCartFromPage();
       console.log(payload);
       setLastCartPayload(payload);
-      if (!cartPayloadHasImportableData(payload)) {
+      if (!cartPayloadHasImportableData(payload) && !cartPayloadHasShippingChoice(payload)) {
         return;
       }
       appendScrapedCartPayload(payload);
@@ -822,7 +904,7 @@ export default function QuoteBuilderPage() {
         return;
       }
       setLastCartPayload(data);
-      if (!cartPayloadHasImportableData(data)) {
+      if (!cartPayloadHasImportableData(data) && !cartPayloadHasShippingChoice(data)) {
         return;
       }
       appendScrapedCartPayload(data);
@@ -890,6 +972,7 @@ export default function QuoteBuilderPage() {
         shipping: Number(totals.shippingTotal),
         shipping_label: quote.shippingLabel ?? null,
         shipping_method: serializeShippingMethodForDb(quote.shippingMethod),
+        shipping_options_json: quote.shippingOptions?.length ? quote.shippingOptions : null,
         shipping_state: quote.shippingState ?? null,
         shipping_zip: quote.shippingZip ?? null,
         tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
@@ -1058,6 +1141,9 @@ export default function QuoteBuilderPage() {
       });
 
       const loadedShippingTotal = asNumber(data.shipping);
+      const loadedShippingOptions = parseShippingOptionsFromDb(
+        data.shippingOptionsJson ?? data.shipping_options_json,
+      );
 
       const draft: Quote = {
         id: data.id,
@@ -1074,7 +1160,12 @@ export default function QuoteBuilderPage() {
         discountTotal: 0,
         shippingTotal: loadedShippingTotal,
         shippingLabel: data.shippingLabel ?? null,
-        shippingMethod: parseShippingMethodFromDb(data.shippingMethod),
+        shippingMethod: resolveEffectiveShippingMethod({
+          shippingMethod: parseShippingMethodFromDb(data.shippingMethod),
+          shippingOptions: loadedShippingOptions,
+          shippingTotal: loadedShippingTotal,
+        }),
+        shippingOptions: loadedShippingOptions,
         shippingState: data.shippingState ?? null,
         shippingZip: data.shippingZip ?? null,
         taxTotal: asNumber(data.taxAmount),
@@ -1760,17 +1851,30 @@ export default function QuoteBuilderPage() {
               <span style={{ flexShrink: 0 }}>Shipping</span>
               <select
                 aria-label="Shipping method"
-                value={quote.shippingMethod ?? DEFAULT_SHIPPING_METHOD}
-                onChange={(e) =>
-                  setQuote((prev) => ({
-                    ...prev,
-                    shippingMethod: e.target.value,
-                  }))
-                }
+                value={effectiveShippingMethod}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setQuote((prev) => {
+                    const cartOption = findCartShippingOption(prev.shippingOptions, nextValue);
+                    const nextShippingTotal =
+                      cartOption?.price != null && cartOption.price > 0
+                        ? cartOption.price
+                        : prev.shippingTotal;
+                    return {
+                      ...prev,
+                      shippingMethod: nextValue,
+                      ...recalcQuotePreservingTaxRate(prev, prev.items, {
+                        shippingTotal: nextShippingTotal,
+                        taxTotal: prev.taxTotal,
+                      }),
+                    };
+                  });
+                }}
                 style={{
-                  flex: "0 0 auto",
+                  flex: "1 1 auto",
                   width: 108,
                   minWidth: 96,
+                  maxWidth: 240,
                   border: "1px solid #cbd5e1",
                   borderRadius: 6,
                   padding: "8px 28px 8px 10px",
@@ -1781,7 +1885,7 @@ export default function QuoteBuilderPage() {
                   cursor: "pointer",
                 }}
               >
-                {SHIPPING_METHOD_OPTIONS.map((option) => (
+                {shippingMethodSelectOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>

@@ -182,6 +182,8 @@ router.post("/scrape-cart", async (req, res) => {
             ...(cartUrl ? { cartUrl } : {}),
         });
         console.log("API RESPONSE scrape-cart shippingTotal:", payload.shippingTotal);
+        console.log("API RESPONSE scrape-cart selectedShippingValue:", payload.selectedShippingValue ?? null);
+        console.log("API RESPONSE scrape-cart shippingOptions:", payload.shippingOptions?.length ?? 0);
         return res.json(payload);
     }
     catch (error) {
@@ -286,6 +288,7 @@ const createQuote = async (req, res) => {
             shipping: toDecimalStringOrNull(body.shipping),
             shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
             shippingMethod: toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod")),
+            shippingOptionsJson: pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null,
             shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
             shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
             taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
@@ -376,6 +379,10 @@ router.put("/:id", async (req, res) => {
         }
         if (pickBodyValue(body, "shipping_method", "shippingMethod") !== undefined) {
             updates.shippingMethod = toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod"));
+        }
+        if (pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") !== undefined) {
+            updates.shippingOptionsJson =
+                pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null;
         }
         if (pickBodyValue(body, "shipping_state", "shippingState") !== undefined) {
             updates.shippingState = toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState"));

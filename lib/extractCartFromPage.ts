@@ -1,4 +1,5 @@
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
+import { reconcileShippingSelectionWithTotal } from "./shippingMethod";
 
 const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
 
@@ -12,6 +13,13 @@ export type CartItemRow = {
   options?: string[];
 };
 
+export type CartShippingOption = {
+  value: string;
+  label: string;
+  price?: number;
+  selected?: boolean;
+};
+
 export type CartPayload = {
   cartId: string;
   cartItems: CartItemRow[];
@@ -19,6 +27,9 @@ export type CartPayload = {
   shippingState?: string;
   shippingZip?: string;
   shippingLabel?: string | null;
+  shippingOptions?: CartShippingOption[];
+  selectedShippingValue?: string;
+  selectedShippingOption?: CartShippingOption | null;
   taxTotal: number;
   /** e.g. "NJ Sales Tax (6.625%)" from `.v65-cart-taxtext-cell` */
   taxDescription?: string;
@@ -641,12 +652,152 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
 
   const { state: shippingState, zip: shippingZip } = extractShippingDestination();
 
+  // Inline Volusion ShippingSpeedChoice scrape (must stay self-contained for page.evaluate).
+  const shippingSpeedExtras = (() => {
+    function findShippingSpeedSelect(): HTMLSelectElement | null {
+      const queries = [
+        '#v65-cart-shipping-details select[name="ShippingSpeedChoice"]',
+        '#v65-cart-shipping-details select.browser-default[name="ShippingSpeedChoice"]',
+        "#v65-cart-shipping-details-wrapper select[name=\"ShippingSpeedChoice\"]",
+        "td.v65-cart-shipping-details-input-cell select[name=\"ShippingSpeedChoice\"]",
+        'select.browser-default[name="ShippingSpeedChoice"]',
+        'select[name="ShippingSpeedChoice"]',
+      ];
+      for (const query of queries) {
+        const el = document.querySelector(query);
+        if (el instanceof HTMLSelectElement && el.options.length > 0) return el;
+      }
+      return null;
+    }
+
+    function shippingOptionLabel(option: HTMLOptionElement): string {
+      return (option.label || option.textContent || "").replace(/\s+/g, " ").trim();
+    }
+
+    function isPleaseSelect(option: HTMLOptionElement | null): boolean {
+      if (!option) return true;
+      const value = (option.value ?? "").trim();
+      const label = shippingOptionLabel(option);
+      return !value || value === "0" || /^please\s*select/i.test(label);
+    }
+
+    function optionIsMarkedSelected(option: HTMLOptionElement): boolean {
+      if (option.selected) return true;
+      if (option.hasAttribute("selected")) return true;
+      const attr = (option.getAttribute("selected") ?? "").trim().toLowerCase();
+      return attr !== "" && attr !== "false";
+    }
+
+    function findSelectedOption(select: HTMLSelectElement): HTMLOptionElement | null {
+      for (const option of Array.from(select.options)) {
+        if (optionIsMarkedSelected(option) && !isPleaseSelect(option)) return option;
+      }
+      const indexed = select.selectedIndex >= 0 ? select.options.item(select.selectedIndex) : null;
+      if (indexed && !isPleaseSelect(indexed)) return indexed;
+      return null;
+    }
+
+    function parseShippingPrice(label: string): number {
+      const dollarMatches = [...label.matchAll(/\$\s*([\d,]+(?:\.\d{2})?)/g)];
+      const priceToken =
+        dollarMatches.length > 0
+          ? dollarMatches[dollarMatches.length - 1]?.[1]
+          : label.match(/([\d,]+\.\d{2})\s*$/)?.[1];
+      if (!priceToken) return 0;
+      const n = parseFloat(priceToken.replace(/,/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function toOption(option: HTMLOptionElement): CartShippingOption {
+      const value = (option.value ?? "").trim();
+      const label = shippingOptionLabel(option);
+      const price = parseShippingPrice(label);
+      return price > 0 ? { value, label, price } : { value, label };
+    }
+
+    const select = findShippingSpeedSelect();
+    if (!select) return null;
+
+    const options: CartShippingOption[] = [];
+    Array.from(select.options).forEach((option) => {
+      if (isPleaseSelect(option)) return;
+      options.push(toOption(option));
+    });
+    if (!options.length) return null;
+
+    let selectedShippingValue = "";
+    let selectedShippingTotal = 0;
+    let selectedShippingOption: CartShippingOption | null = null;
+    const selectedDom = findSelectedOption(select);
+
+    if (selectedDom) {
+      const selectedValue = (selectedDom.value ?? "").trim();
+      const selectedLabel = shippingOptionLabel(selectedDom);
+      if (selectedValue && selectedValue !== "0") {
+        let match =
+          options.find((option) => option.value === selectedValue) ??
+          options.find((option) => option.label === selectedLabel);
+        if (!match) {
+          match = toOption(selectedDom);
+          options.push(match);
+        }
+        selectedShippingValue = match.value;
+        selectedShippingTotal = match.price ?? 0;
+        selectedShippingOption = { ...match, selected: true };
+      }
+    }
+
+    if (!selectedShippingValue && options.length === 1) {
+      const only = options[0];
+      if (only) {
+        selectedShippingValue = only.value;
+        selectedShippingTotal = only.price ?? 0;
+        selectedShippingOption = { ...only, selected: true };
+      }
+    }
+
+    const shippingOptions = options.map((option) => ({
+      ...option,
+      selected: Boolean(selectedShippingValue && option.value === selectedShippingValue),
+    }));
+    if (!selectedShippingOption) {
+      selectedShippingOption = shippingOptions.find((option) => option.selected) ?? null;
+    }
+
+    return {
+      shippingOptions,
+      selectedShippingValue,
+      selectedShippingOption,
+      shippingTotal: selectedShippingTotal,
+    };
+  })();
+
+  let resolvedShippingTotal = shippingTotal;
+  if (shippingSpeedExtras?.shippingTotal && shippingSpeedExtras.shippingTotal > 0) {
+    const dropdownTotal = shippingSpeedExtras.shippingTotal;
+    if (
+      shippingTotal === 0 ||
+      Math.abs(Math.round(shippingTotal * 100) - Math.round(dropdownTotal * 100)) <= 2
+    ) {
+      resolvedShippingTotal = dropdownTotal;
+    }
+  }
+
   return {
     cartId,
     cartItems,
-    shippingTotal,
+    shippingTotal: resolvedShippingTotal,
     ...(shippingState ? { shippingState } : {}),
     ...(shippingZip ? { shippingZip } : {}),
+    ...(shippingSpeedExtras?.shippingOptions?.length
+      ? { shippingOptions: shippingSpeedExtras.shippingOptions }
+      : {}),
+    ...(shippingSpeedExtras?.selectedShippingValue
+      ? { selectedShippingValue: shippingSpeedExtras.selectedShippingValue }
+      : {}),
+    ...(shippingSpeedExtras?.selectedShippingOption
+      ? { selectedShippingOption: shippingSpeedExtras.selectedShippingOption }
+      : {}),
     taxTotal,
     ...(taxDescription ? { taxDescription } : {}),
     grandTotal,
@@ -670,6 +821,28 @@ export function normalizeCartPayloadImages(payload: CartPayload): CartPayload {
 
   if (payload.shippingLabel !== undefined) {
     normalized.shippingLabel = payload.shippingLabel;
+  }
+  if (payload.shippingOptions !== undefined) {
+    normalized.shippingOptions = payload.shippingOptions;
+  }
+  if (payload.selectedShippingValue !== undefined) {
+    normalized.selectedShippingValue = payload.selectedShippingValue;
+  }
+  if (payload.selectedShippingOption !== undefined) {
+    normalized.selectedShippingOption = payload.selectedShippingOption;
+  }
+
+  if (normalized.shippingOptions?.length && normalized.shippingTotal > 0) {
+    const reconciled = reconcileShippingSelectionWithTotal(
+      normalized.shippingOptions,
+      normalized.shippingTotal,
+      normalized.selectedShippingValue ?? normalized.selectedShippingOption?.value,
+    );
+    normalized.shippingOptions = reconciled.shippingOptions ?? normalized.shippingOptions;
+    if (reconciled.selectedShippingValue) {
+      normalized.selectedShippingValue = reconciled.selectedShippingValue;
+      normalized.selectedShippingOption = reconciled.selectedShippingOption;
+    }
   }
 
   return normalized;

@@ -11,6 +11,7 @@ const promises_2 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const playwright_1 = require("playwright");
 const extractCartFromPage_1 = require("../lib/extractCartFromPage");
+const extractShippingSpeedChoiceInBrowser_1 = require("../lib/extractShippingSpeedChoiceInBrowser");
 const DEFAULT_CART_URL = "https://www.xyzdisplays.com/ShoppingCart.asp";
 const STORE_HOME_URL = "https://www.xyzdisplays.com/";
 let liveContext = null;
@@ -139,6 +140,14 @@ async function scrapeVolusionStorefrontCart(options = {}) {
         /* cart may still parse with fallbacks */
     });
     await (0, promises_1.setTimeout)(500);
+    await page
+        .waitForSelector(extractShippingSpeedChoiceInBrowser_1.SHIPPING_SPEED_SELECT_SELECTOR, {
+        state: "attached",
+        timeout: 10000,
+    })
+        .catch(() => {
+        /* shipping widget may be absent until destination is set */
+    });
     const debug = process.env.SCRAPE_CART_DEBUG === "1";
     if (debug) {
         console.error("[scrape-cart] url:", page.url());
@@ -147,8 +156,11 @@ async function scrapeVolusionStorefrontCart(options = {}) {
         console.error("[scrape-cart] body snippet:", (await page.content()).slice(0, 2000));
     }
     const raw = await page.evaluate(extractCartFromPage_1.extractCartPayloadInBrowser);
+    await (0, extractShippingSpeedChoiceInBrowser_1.enrichPayloadWithShippingSpeedChoice)(page, raw);
     if (debug) {
         console.error("[scrape-cart] shippingTotal:", raw.shippingTotal);
+        console.error("[scrape-cart] selectedShippingValue:", raw.selectedShippingValue ?? null);
+        console.error("[scrape-cart] shippingOptions:", raw.shippingOptions?.length ?? 0);
     }
     return (0, extractCartFromPage_1.normalizeCartPayloadImages)(raw);
 }

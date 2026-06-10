@@ -7,6 +7,10 @@ import {
   normalizeCartPayloadImages,
   type CartPayload,
 } from "../lib/extractCartFromPage";
+import {
+  enrichPayloadWithShippingSpeedChoice,
+  SHIPPING_SPEED_SELECT_SELECTOR,
+} from "../lib/extractShippingSpeedChoiceInBrowser";
 
 const DEFAULT_CART_URL = "https://www.xyzdisplays.com/ShoppingCart.asp";
 const STORE_HOME_URL = "https://www.xyzdisplays.com/";
@@ -166,6 +170,14 @@ export async function scrapeVolusionStorefrontCart(
       /* cart may still parse with fallbacks */
     });
   await delay(500);
+  await page
+    .waitForSelector(SHIPPING_SPEED_SELECT_SELECTOR, {
+      state: "attached",
+      timeout: 10_000,
+    })
+    .catch(() => {
+      /* shipping widget may be absent until destination is set */
+    });
 
   const debug = process.env.SCRAPE_CART_DEBUG === "1";
   if (debug) {
@@ -176,9 +188,12 @@ export async function scrapeVolusionStorefrontCart(
   }
 
   const raw = await page.evaluate(extractCartPayloadInBrowser);
+  await enrichPayloadWithShippingSpeedChoice(page, raw);
 
   if (debug) {
     console.error("[scrape-cart] shippingTotal:", raw.shippingTotal);
+    console.error("[scrape-cart] selectedShippingValue:", raw.selectedShippingValue ?? null);
+    console.error("[scrape-cart] shippingOptions:", raw.shippingOptions?.length ?? 0);
   }
 
   return normalizeCartPayloadImages(raw);

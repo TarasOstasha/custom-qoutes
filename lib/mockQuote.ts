@@ -1,3 +1,5 @@
+import type { CartShippingOption } from "./extractCartFromPage";
+
 export type QuoteItem = {
   id: string;
   quoteId: string;
@@ -38,8 +40,10 @@ export type Quote = {
   discountTotal: number;
   shippingTotal: number;
   shippingLabel?: string | null;
-  /** Builder shipping method select value (e.g. "1" = Ground). */
+  /** Builder shipping method select value (e.g. "1" = Ground, or cart value "928"). */
   shippingMethod?: string | null;
+  /** Volusion cart shipping options appended to the builder dropdown. */
+  shippingOptions?: CartShippingOption[] | null;
   shippingState?: string | null;
   shippingZip?: string | null;
   taxTotal: number;
@@ -73,6 +77,7 @@ export const mockQuote: Quote = {
   shippingTotal: 346.32,
   shippingLabel: null,
   shippingMethod: null,
+  shippingOptions: null,
   shippingState: null,
   shippingZip: null,
   taxTotal: 0,
@@ -167,6 +172,7 @@ export function createEmptyQuote(): Quote {
     shippingTotal: 0,
     shippingLabel: null,
     shippingMethod: "0",
+    shippingOptions: null,
     shippingState: null,
     shippingZip: null,
     taxTotal: 0,
