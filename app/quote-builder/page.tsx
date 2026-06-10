@@ -16,6 +16,7 @@ import {
 } from "../../lib/shippingDestination";
 import {
   buildShippingMethodSelectOptions,
+  formatShippingOptionDisplayLabel,
   cartPayloadHasShippingChoice,
   DEFAULT_SHIPPING_METHOD,
   findCartShippingOption,
@@ -1872,9 +1873,9 @@ export default function QuoteBuilderPage() {
                 }}
                 style={{
                   flex: "1 1 auto",
-                  width: 108,
-                  minWidth: 96,
-                  maxWidth: 240,
+                  width: 40,
+                  minWidth: 40,
+                  maxWidth: 118,
                   border: "1px solid #cbd5e1",
                   borderRadius: 6,
                   padding: "8px 28px 8px 10px",
@@ -1887,7 +1888,7 @@ export default function QuoteBuilderPage() {
               >
                 {shippingMethodSelectOptions.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {formatShippingOptionDisplayLabel(option.label)}
                   </option>
                 ))}
               </select>

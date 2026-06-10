@@ -26,6 +26,22 @@ export function mergeCartShippingOptions(
   return Array.from(merged.values());
 }
 
+/** Compact dropdown label — strips dollar/trailing amounts and the word "Shipping". */
+export function formatShippingOptionDisplayLabel(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) return trimmed;
+
+  const cleaned = trimmed
+    .replace(/\$\s*[\d,]+(?:\.\d{2})?/g, "")
+    .replace(/[\d,]+\.\d{2}\s*$/, "")
+    .replace(/\bshipping\b/gi, "")
+    .replace(/\s*[-–—]+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return cleaned || trimmed;
+}
+
 /** Cart options first, then Custom always last. */
 export function buildShippingMethodSelectOptions(
   cartOptions?: CartShippingOption[] | null,
