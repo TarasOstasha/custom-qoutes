@@ -1,6 +1,6 @@
 import type { QuoteItem } from "./mockQuote";
 import { isQuoteDiscountLine, isShippingLine } from "./quoteDiscount";
-import { resolveTaxRatePercent, taxableBase } from "./taxLabel";
+import { isTbdLabel, resolveTaxRatePercent, taxableBase } from "./taxLabel";
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -75,6 +75,8 @@ type TaxRateQuoteFields = {
   taxTotal: number;
   taxRatePercent?: number | null;
   taxDescription?: string | null;
+  taxLabel?: string | null;
+  shippingLabel?: string | null;
 };
 
 /**
@@ -90,7 +92,12 @@ export function recalcQuotePreservingTaxRate(
     taxRatePercent?: number | null;
   }
 ) {
-  const shippingTotal = round2(opts?.shippingTotal ?? prev.shippingTotal);
+  const shippingTotal =
+    opts?.shippingTotal !== undefined
+      ? round2(opts.shippingTotal)
+      : isTbdLabel(prev.shippingLabel)
+        ? 0
+        : round2(prev.shippingTotal);
   const rate =
     opts?.taxRatePercent !== undefined
       ? opts.taxRatePercent
@@ -99,6 +106,8 @@ export function recalcQuotePreservingTaxRate(
   let taxTotal: number;
   if (opts?.taxTotal !== undefined) {
     taxTotal = round2(opts.taxTotal);
+  } else if (isTbdLabel(prev.taxLabel)) {
+    taxTotal = 0;
   } else if (rate != null && Number.isFinite(rate)) {
     const partial = recalcQuote(items, { shippingTotal, taxTotal: 0 });
     const base = taxableBase(partial.subtotal, partial.discountTotal, shippingTotal);

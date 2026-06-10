@@ -15,6 +15,21 @@ export function parseTaxRatePercentFromDescription(
   return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
+export function isTbdLabel(value?: string | null): boolean {
+  return value?.trim().toLowerCase() === "tbd";
+}
+
+export function isTaxTbd(taxLabel?: string | null): boolean {
+  return isTbdLabel(taxLabel);
+}
+
+export function quoteGrandTotalIsTbd(quote: {
+  taxLabel?: string | null;
+  shippingLabel?: string | null;
+}): boolean {
+  return isTbdLabel(quote.taxLabel) || isTbdLabel(quote.shippingLabel);
+}
+
 export function formatTaxRatePercentInput(rate: number | null | undefined): string {
   if (rate == null || !Number.isFinite(rate) || rate <= 0) return "";
   return String(Number(rate.toFixed(3)));

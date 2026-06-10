@@ -32,6 +32,8 @@ import {
 import {
   formatTaxRatePercentInput,
   formatTaxRowLabel,
+  isTbdLabel,
+  quoteGrandTotalIsTbd,
   parseTaxRatePercentFromDescription,
   resolveTaxRatePercent,
 } from "../../lib/taxLabel";
@@ -227,8 +229,11 @@ export default function QuoteBuilderPage() {
       const current = prev.shippingMethod ?? DEFAULT_SHIPPING_METHOD;
       if (resolved === current) return prev;
       const cartOption = findCartShippingOption(prev.shippingOptions, resolved);
-      const nextShippingTotal =
-        cartOption?.price != null && cartOption.price > 0 ? cartOption.price : prev.shippingTotal;
+      const nextShippingTotal = isTbdLabel(prev.shippingLabel)
+        ? 0
+        : cartOption?.price != null && cartOption.price > 0
+          ? cartOption.price
+          : prev.shippingTotal;
       return {
         ...prev,
         shippingMethod: resolved,
@@ -251,10 +256,12 @@ export default function QuoteBuilderPage() {
     const trimmed = rawValue.trim();
     const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
     const isNumeric = trimmed.length > 0 && Number.isFinite(numeric);
+    const isTbd = trimmed.toLowerCase() === "tbd";
 
     setQuote((prev) => {
       const nextTaxTotal = isNumeric ? round2(numeric) : 0;
-      const nextLabel = trimmed.length > 0 && !isNumeric ? trimmed : null;
+      const nextLabel =
+        trimmed.length > 0 && !isNumeric ? (isTbd ? "TBD" : trimmed) : null;
 
       const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
         taxTotal: nextTaxTotal,
@@ -271,16 +278,21 @@ export default function QuoteBuilderPage() {
   const applyShippingAmount = (rawValue: string) => {
     const trimmed = rawValue.trim();
     const numeric = Number(trimmed.replace(/[$,\s]/g, ""));
-    const nextShippingTotal = trimmed.length > 0 && Number.isFinite(numeric) ? round2(numeric) : 0;
+    const isNumeric = trimmed.length > 0 && Number.isFinite(numeric);
+    const isTbd = trimmed.toLowerCase() === "tbd";
 
     setQuote((prev) => {
+      const nextShippingTotal = isNumeric ? round2(numeric) : 0;
+      const nextLabel =
+        trimmed.length > 0 && !isNumeric ? (isTbd ? "TBD" : trimmed) : null;
+
       const recalculated = recalcQuotePreservingTaxRate(prev, prev.items, {
         shippingTotal: nextShippingTotal,
       });
       return {
         ...prev,
         ...recalculated,
-        shippingLabel: prev.shippingLabel?.trim() || null,
+        shippingLabel: nextLabel,
       };
     });
   };
@@ -291,11 +303,23 @@ export default function QuoteBuilderPage() {
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
   const [shippingDestinationDraft, setShippingDestinationDraft] = useState<string | null>(null);
   const [taxRowLabelDraft, setTaxRowLabelDraft] = useState<string | null>(null);
+  const [taxAmountDraft, setTaxAmountDraft] = useState<string | null>(null);
+  const [shippingAmountDraft, setShippingAmountDraft] = useState<string | null>(null);
   const shippingDestinationText = formatShippingDestination(quote.shippingState, quote.shippingZip);
   const shippingDestinationDisplay =
     shippingDestinationDraft !== null ? shippingDestinationDraft : shippingDestinationText;
   const taxRowLabelText = formatTaxRowLabel(quote.taxDescription, quote.shippingState);
   const taxRowLabelDisplay = taxRowLabelDraft !== null ? taxRowLabelDraft : taxRowLabelText;
+  const taxAmountText = quote.taxLabel?.trim() ? quote.taxLabel : String(totals.taxTotal);
+  const taxAmountDisplay = taxAmountDraft !== null ? taxAmountDraft : taxAmountText;
+  const shippingAmountText = quote.shippingLabel?.trim()
+    ? quote.shippingLabel
+    : String(totals.shippingTotal);
+  const shippingAmountDisplay =
+    shippingAmountDraft !== null ? shippingAmountDraft : shippingAmountText;
+  const grandTotalDisplay = quoteGrandTotalIsTbd(quote)
+    ? "TBD"
+    : currency(totals.grandTotal);
 
   const applyShippingDestination = (raw: string) => {
     const trimmed = raw.trim();
@@ -313,10 +337,14 @@ export default function QuoteBuilderPage() {
 
   const applyTaxRowLabel = (raw: string) => {
     const trimmed = raw.trim();
-    setQuote((prev) => ({
-      ...prev,
-      taxDescription: trimmed || null,
-    }));
+    setQuote((prev) => {
+      const currentRate = resolveTaxRatePercent(prev);
+      return {
+        ...prev,
+        taxDescription: trimmed || null,
+        taxRatePercent: currentRate ?? prev.taxRatePercent ?? null,
+      };
+    });
   };
 
   const taxPercentDisplay =
@@ -1924,8 +1952,9 @@ export default function QuoteBuilderPage() {
                   const nextValue = e.target.value;
                   setQuote((prev) => {
                     const cartOption = findCartShippingOption(prev.shippingOptions, nextValue);
-                    const nextShippingTotal =
-                      cartOption?.price != null && cartOption.price > 0
+                    const nextShippingTotal = isTbdLabel(prev.shippingLabel)
+                      ? 0
+                      : cartOption?.price != null && cartOption.price > 0
                         ? cartOption.price
                         : prev.shippingTotal;
                     return {
@@ -1973,9 +2002,21 @@ export default function QuoteBuilderPage() {
                 style={{ flex: 1, minWidth: 0, maxWidth: 160 }}
               />
               <input
-                value={String(totals.shippingTotal)}
-                onChange={(e) => applyShippingAmount(e.target.value)}
-                placeholder="0.00"
+                type="text"
+                value={shippingAmountDisplay}
+                onFocus={() => setShippingAmountDraft(shippingAmountText)}
+                onBlur={() => {
+                  if (shippingAmountDraft !== null && shippingAmountDraft !== shippingAmountText) {
+                    applyShippingAmount(shippingAmountDraft);
+                  }
+                  setShippingAmountDraft(null);
+                }}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setShippingAmountDraft(v);
+                  applyShippingAmount(v);
+                }}
+                placeholder="e.g. 0 or TBD"
                 aria-label="Shipping amount"
                 style={{ maxWidth: 120, textAlign: "right", flexShrink: 0 }}
               />
@@ -1986,7 +2027,9 @@ export default function QuoteBuilderPage() {
                 value={taxRowLabelDisplay}
                 onFocus={() => setTaxRowLabelDraft(taxRowLabelText)}
                 onBlur={() => {
-                  applyTaxRowLabel(taxRowLabelDraft ?? taxRowLabelText);
+                  if (taxRowLabelDraft !== null && taxRowLabelDraft !== taxRowLabelText) {
+                    applyTaxRowLabel(taxRowLabelDraft);
+                  }
                   setTaxRowLabelDraft(null);
                 }}
                 onChange={(e) => setTaxRowLabelDraft(e.target.value)}
@@ -2016,16 +2059,29 @@ export default function QuoteBuilderPage() {
                   </span>
                 </div>
                 <input
-                  value={quote.taxLabel ?? String(totals.taxTotal)}
-                  onChange={(e) => applyChargeInput("tax", e.target.value)}
+                  type="text"
+                  value={taxAmountDisplay}
+                  onFocus={() => setTaxAmountDraft(taxAmountText)}
+                  onBlur={() => {
+                    if (taxAmountDraft !== null && taxAmountDraft !== taxAmountText) {
+                      applyChargeInput("tax", taxAmountDraft);
+                    }
+                    setTaxAmountDraft(null);
+                  }}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTaxAmountDraft(v);
+                    applyChargeInput("tax", v);
+                  }}
                   placeholder="e.g. 0 or TBD"
+                  aria-label="Tax amount"
                   style={{ maxWidth: 120, textAlign: "right" }}
                 />
               </div>
             </div>
             <div className="totals-row total">
               <span>Total</span>
-              <span>{currency(totals.grandTotal)}</span>
+              <span>{grandTotalDisplay}</span>
             </div>
           </div>
         </div>

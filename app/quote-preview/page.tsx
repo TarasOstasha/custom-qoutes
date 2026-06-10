@@ -8,9 +8,9 @@ import { formatQuoteLineDescription } from "../../lib/formatQuoteLineDescription
 import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
-import { recalcQuote } from "../../lib/recalcQuote";
+import { recalcQuotePreservingTaxRate } from "../../lib/recalcQuote";
 import { formatShippingRowAnnotation } from "../../lib/shippingMethod";
-import { formatTaxRowLabel } from "../../lib/taxLabel";
+import { formatTaxRowLabel, quoteGrandTotalIsTbd } from "../../lib/taxLabel";
 import { clearQuoteDraft, loadQuoteFromPreviewStorage, saveQuoteDraft } from "../../lib/quotePreviewStorage";
 
 function money(value: number): string {
@@ -30,7 +30,7 @@ export default function QuotePreviewPage() {
       const items = prev.items.filter((i) => i.id !== itemId);
       const next = {
         ...prev,
-        ...recalcQuote(items, { shippingTotal: prev.shippingTotal, taxTotal: prev.taxTotal }),
+        ...recalcQuotePreservingTaxRate(prev, items),
       };
       saveQuoteDraft(next);
       return next;
@@ -262,7 +262,7 @@ export default function QuotePreviewPage() {
                   TOTAL
                 </td>
                 <td className="right" style={{ fontWeight: 700 }}>
-                  {money(quote.grandTotal)}
+                  {quoteGrandTotalIsTbd(quote) ? "TBD" : money(quote.grandTotal)}
                 </td>
               </tr>
             </tbody>
