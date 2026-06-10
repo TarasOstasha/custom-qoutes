@@ -5,7 +5,7 @@ import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
 import { formatShippingTotalLabel } from "./shippingMethod";
-import { formatTaxRowLabel } from "./taxLabel";
+import { formatTaxRowLabel, quoteGrandTotalIsTbd } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
   const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -354,18 +354,31 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   const totalsXLabel = pageWidth - margin - 170;
   const totalsXValue = pageWidth - margin;
   let totalsY = tableEndY + 10;
-  const drawTotal = (label: string, value: number, bold = false) => {
+  const drawTotal = (
+    label: string,
+    value: number,
+    opts?: { bold?: boolean; textValue?: string | null },
+  ) => {
+    const bold = opts?.bold ?? false;
+    const display = opts?.textValue?.trim() ? opts.textValue.trim() : money(value);
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.setFontSize(12);
     doc.text(label, totalsXLabel, totalsY, { align: "right" });
-    doc.text(money(value), totalsXValue, totalsY, { align: "right" });
+    doc.text(display, totalsXValue, totalsY, { align: "right" });
     totalsY += 20;
   };
   drawTotal("Subtotal", quote.subtotal);
   if (quote.discountTotal > 0) drawTotal("Discounts", -quote.discountTotal);
-  drawTotal(formatShippingTotalLabel(quote), quote.shippingTotal);
-  drawTotal(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal);
-  drawTotal("TOTAL", quote.grandTotal, true);
+  drawTotal(formatShippingTotalLabel(quote), quote.shippingTotal, {
+    textValue: quote.shippingLabel?.trim() || null,
+  });
+  drawTotal(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal, {
+    textValue: quote.taxLabel?.trim() || null,
+  });
+  drawTotal("TOTAL", quote.grandTotal, {
+    bold: true,
+    textValue: quoteGrandTotalIsTbd(quote) ? "TBD" : null,
+  });
 
   const notesY = totalsY + 12;
   doc.setDrawColor(209, 213, 219);

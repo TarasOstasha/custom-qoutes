@@ -4,7 +4,7 @@ import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
 import { formatShippingTotalLabel } from "./shippingMethod";
-import { formatTaxRowLabel } from "./taxLabel";
+import { formatTaxRowLabel, quoteGrandTotalIsTbd } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
   const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -399,7 +399,11 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
       textValue: quote.taxLabel?.trim() || null,
     },
   );
-  addTotalRow("TOTAL", quote.grandTotal, { bold: true, thickTop: true });
+  addTotalRow("TOTAL", quote.grandTotal, {
+    bold: true,
+    thickTop: true,
+    textValue: quoteGrandTotalIsTbd(quote) ? "TBD" : null,
+  });
 
   row += 1;
   ws.mergeCells(`A${row}:E${row}`);
