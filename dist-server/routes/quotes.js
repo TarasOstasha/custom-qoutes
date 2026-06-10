@@ -181,7 +181,7 @@ router.post("/scrape-cart", async (req, res) => {
         const payload = await (0, scrapeStorefrontCart_1.scrapeVolusionStorefrontCart)({
             ...(cartUrl ? { cartUrl } : {}),
         });
-        console.log("API RESPONSE shippingOptions", payload.shippingOptions);
+        console.log("API RESPONSE scrape-cart shippingTotal:", payload.shippingTotal);
         return res.json(payload);
     }
     catch (error) {
@@ -285,10 +285,9 @@ const createQuote = async (req, res) => {
             subtotal: toDecimalStringOrNull(body.subtotal),
             shipping: toDecimalStringOrNull(body.shipping),
             shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
+            shippingMethod: toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod")),
             shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
             shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
-            shippingOptionsJson: pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null,
-            selectedShippingValue: toStringOrNull(pickBodyValue(body, "selected_shipping_value", "selectedShippingValue")),
             taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
             taxAmount: toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount")),
             taxLabel: toStringOrNull(pickBodyValue(body, "tax_label", "taxLabel")),
@@ -375,18 +374,14 @@ router.put("/:id", async (req, res) => {
         if (pickBodyValue(body, "shipping_label", "shippingLabel") !== undefined) {
             updates.shippingLabel = toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel"));
         }
+        if (pickBodyValue(body, "shipping_method", "shippingMethod") !== undefined) {
+            updates.shippingMethod = toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod"));
+        }
         if (pickBodyValue(body, "shipping_state", "shippingState") !== undefined) {
             updates.shippingState = toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState"));
         }
         if (pickBodyValue(body, "shipping_zip", "shippingZip") !== undefined) {
             updates.shippingZip = toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip"));
-        }
-        if (pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") !== undefined) {
-            updates.shippingOptionsJson =
-                pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null;
-        }
-        if (pickBodyValue(body, "selected_shipping_value", "selectedShippingValue") !== undefined) {
-            updates.selectedShippingValue = toStringOrNull(pickBodyValue(body, "selected_shipping_value", "selectedShippingValue"));
         }
         if (pickBodyValue(body, "tax_rate", "taxRate") !== undefined) {
             updates.taxRate = toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate"));

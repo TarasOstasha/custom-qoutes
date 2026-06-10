@@ -30,6 +30,7 @@ async function ensureQuotePersistenceColumns(): Promise<void> {
   };
 
   await addIfMissing("shipping_label", { type: DataTypes.STRING, allowNull: true });
+  await addIfMissing("shipping_method", { type: DataTypes.STRING, allowNull: true });
   await addIfMissing("shipping_state", { type: DataTypes.STRING, allowNull: true });
   await addIfMissing("shipping_zip", { type: DataTypes.STRING, allowNull: true });
   await addIfMissing("tax_label", { type: DataTypes.STRING, allowNull: true });

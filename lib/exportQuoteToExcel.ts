@@ -3,7 +3,7 @@ import { apiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
-import { formatShippingDestination } from "./shippingDestination";
+import { formatShippingTotalLabel } from "./shippingMethod";
 import { formatTaxRowLabel } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
@@ -389,14 +389,9 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   if (quote.discountTotal > 0) {
     addTotalRow("Discounts", -quote.discountTotal);
   }
-  const shippingNote = formatShippingDestination(
-    quote.shippingState,
-    quote.shippingZip,
-  );
-  const shippingText =
-    [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") ||
-    null;
-  addTotalRow("Shipping", quote.shippingTotal, { textValue: shippingText });
+  addTotalRow(formatShippingTotalLabel(quote), quote.shippingTotal, {
+    textValue: quote.shippingLabel?.trim() || null,
+  });
   addTotalRow(
     formatTaxRowLabel(quote.taxDescription, quote.shippingState),
     quote.taxTotal,

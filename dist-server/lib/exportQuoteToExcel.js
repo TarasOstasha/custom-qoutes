@@ -8,7 +8,7 @@ const exceljs_1 = __importDefault(require("exceljs"));
 const apiBase_1 = require("./apiBase");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
 const quoteDiscount_1 = require("./quoteDiscount");
-const shippingDestination_1 = require("./shippingDestination");
+const shippingMethod_1 = require("./shippingMethod");
 const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
     const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -345,10 +345,9 @@ async function exportQuoteToExcel(quote) {
     if (quote.discountTotal > 0) {
         addTotalRow("Discounts", -quote.discountTotal);
     }
-    const shippingNote = (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip);
-    const shippingText = [quote.shippingLabel?.trim(), shippingNote].filter(Boolean).join(" · ") ||
-        null;
-    addTotalRow("Shipping", quote.shippingTotal, { textValue: shippingText });
+    addTotalRow((0, shippingMethod_1.formatShippingTotalLabel)(quote), quote.shippingTotal, {
+        textValue: quote.shippingLabel?.trim() || null,
+    });
     addTotalRow((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal, {
         textValue: quote.taxLabel?.trim() || null,
     });

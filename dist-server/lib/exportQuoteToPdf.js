@@ -9,7 +9,7 @@ const jspdf_autotable_1 = __importDefault(require("jspdf-autotable"));
 const apiBase_1 = require("./apiBase");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
 const quoteDiscount_1 = require("./quoteDiscount");
-const shippingDestination_1 = require("./shippingDestination");
+const shippingMethod_1 = require("./shippingMethod");
 const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
     const t = s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -318,11 +318,7 @@ async function exportQuoteToPdf(quote) {
     drawTotal("Subtotal", quote.subtotal);
     if (quote.discountTotal > 0)
         drawTotal("Discounts", -quote.discountTotal);
-    const shippingDest = (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip);
-    const shippingLabel = shippingDest
-        ? `Shipping to ${shippingDest.replace(/, /g, " ")}`
-        : "Shipping";
-    drawTotal(shippingLabel, quote.shippingTotal);
+    drawTotal((0, shippingMethod_1.formatShippingTotalLabel)(quote), quote.shippingTotal);
     drawTotal((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal);
     drawTotal("TOTAL", quote.grandTotal, true);
     const notesY = totalsY + 12;

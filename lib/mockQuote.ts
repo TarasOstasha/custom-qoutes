@@ -38,6 +38,8 @@ export type Quote = {
   discountTotal: number;
   shippingTotal: number;
   shippingLabel?: string | null;
+  /** Builder shipping method select value (e.g. "1" = Ground). */
+  shippingMethod?: string | null;
   shippingState?: string | null;
   shippingZip?: string | null;
   taxTotal: number;
@@ -70,6 +72,7 @@ export const mockQuote: Quote = {
   discountTotal: 607.5,
   shippingTotal: 346.32,
   shippingLabel: null,
+  shippingMethod: null,
   shippingState: null,
   shippingZip: null,
   taxTotal: 0,
@@ -163,6 +166,7 @@ export function createEmptyQuote(): Quote {
     discountTotal: 0,
     shippingTotal: 0,
     shippingLabel: null,
+    shippingMethod: "0",
     shippingState: null,
     shippingZip: null,
     taxTotal: 0,

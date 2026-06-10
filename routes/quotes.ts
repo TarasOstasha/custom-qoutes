@@ -318,6 +318,7 @@ const createQuote = async (req: Request, res: Response) => {
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
         shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
+        shippingMethod: toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod")),
         shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
         shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
         taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
@@ -406,6 +407,9 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.shipping !== undefined) updates.shipping = toDecimalStringOrNull(body.shipping);
     if (pickBodyValue(body, "shipping_label", "shippingLabel") !== undefined) {
       updates.shippingLabel = toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel"));
+    }
+    if (pickBodyValue(body, "shipping_method", "shippingMethod") !== undefined) {
+      updates.shippingMethod = toStringOrNull(pickBodyValue(body, "shipping_method", "shippingMethod"));
     }
     if (pickBodyValue(body, "shipping_state", "shippingState") !== undefined) {
       updates.shippingState = toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState"));

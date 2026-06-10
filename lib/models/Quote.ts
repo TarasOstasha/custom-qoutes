@@ -16,6 +16,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare subtotal: string | null;
   declare shipping: string | null;
   declare shippingLabel: string | null;
+  declare shippingMethod: string | null;
   declare shippingState: string | null;
   declare shippingZip: string | null;
   declare shippingOptionsJson: unknown | null;
@@ -94,6 +95,11 @@ Quote.init(
       type: DataTypes.STRING,
       allowNull: true,
       field: "shipping_label",
+    },
+    shippingMethod: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "shipping_method",
     },
     shippingState: {
       type: DataTypes.STRING,

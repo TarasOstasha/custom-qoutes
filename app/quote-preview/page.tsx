@@ -9,7 +9,7 @@ import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuote } from "../../lib/recalcQuote";
-import { formatShippingDestination } from "../../lib/shippingDestination";
+import { formatShippingRowAnnotation } from "../../lib/shippingMethod";
 import { formatTaxRowLabel } from "../../lib/taxLabel";
 import { clearQuoteDraft, loadQuoteFromPreviewStorage, saveQuoteDraft } from "../../lib/quotePreviewStorage";
 
@@ -240,11 +240,14 @@ export default function QuotePreviewPage() {
               <tr>
                 <td colSpan={4} className="right">
                   Shipping
-                  {formatShippingDestination(quote.shippingState, quote.shippingZip) ? (
-                    <span className="muted" style={{ marginLeft: 8, fontWeight: 400 }}>
-                      {formatShippingDestination(quote.shippingState, quote.shippingZip)}
-                    </span>
-                  ) : null}
+                  {(() => {
+                    const shippingNote = formatShippingRowAnnotation(quote);
+                    return shippingNote ? (
+                      <span className="muted" style={{ marginLeft: 8, fontWeight: 400 }}>
+                        {shippingNote}
+                      </span>
+                    ) : null;
+                  })()}
                 </td>
                 <td className="right">{quote.shippingLabel?.trim() ? quote.shippingLabel : money(quote.shippingTotal)}</td>
               </tr>

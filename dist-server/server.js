@@ -28,6 +28,7 @@ async function ensureQuotePersistenceColumns() {
         }
     };
     await addIfMissing("shipping_label", { type: sequelize_1.DataTypes.STRING, allowNull: true });
+    await addIfMissing("shipping_method", { type: sequelize_1.DataTypes.STRING, allowNull: true });
     await addIfMissing("shipping_state", { type: sequelize_1.DataTypes.STRING, allowNull: true });
     await addIfMissing("shipping_zip", { type: sequelize_1.DataTypes.STRING, allowNull: true });
     await addIfMissing("tax_label", { type: sequelize_1.DataTypes.STRING, allowNull: true });

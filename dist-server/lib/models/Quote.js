@@ -71,6 +71,11 @@ Quote.init({
         allowNull: true,
         field: "shipping_label",
     },
+    shippingMethod: {
+        type: sequelize_1.DataTypes.STRING,
+        allowNull: true,
+        field: "shipping_method",
+    },
     shippingState: {
         type: sequelize_1.DataTypes.STRING,
         allowNull: true,

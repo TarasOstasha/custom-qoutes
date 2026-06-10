@@ -15,6 +15,12 @@ import {
   parseShippingDestinationText,
 } from "../../lib/shippingDestination";
 import {
+  DEFAULT_SHIPPING_METHOD,
+  parseShippingMethodFromDb,
+  serializeShippingMethodForDb,
+  SHIPPING_METHOD_OPTIONS,
+} from "../../lib/shippingMethod";
+import {
   formatTaxRatePercentInput,
   formatTaxRowLabel,
   parseTaxRatePercentFromDescription,
@@ -108,6 +114,7 @@ type ApiQuote = {
   subtotal: number | string | null;
   shipping: number | string | null;
   shippingLabel?: string | null;
+  shippingMethod?: string | null;
   shippingState?: string | null;
   shippingZip?: string | null;
   taxRate: number | string | null;
@@ -882,6 +889,7 @@ export default function QuoteBuilderPage() {
         subtotal: Number(totals.subtotal),
         shipping: Number(totals.shippingTotal),
         shipping_label: quote.shippingLabel ?? null,
+        shipping_method: serializeShippingMethodForDb(quote.shippingMethod),
         shipping_state: quote.shippingState ?? null,
         shipping_zip: quote.shippingZip ?? null,
         tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
@@ -1066,6 +1074,7 @@ export default function QuoteBuilderPage() {
         discountTotal: 0,
         shippingTotal: loadedShippingTotal,
         shippingLabel: data.shippingLabel ?? null,
+        shippingMethod: parseShippingMethodFromDb(data.shippingMethod),
         shippingState: data.shippingState ?? null,
         shippingZip: data.shippingZip ?? null,
         taxTotal: asNumber(data.taxAmount),
@@ -1749,6 +1758,35 @@ export default function QuoteBuilderPage() {
               }}
             >
               <span style={{ flexShrink: 0 }}>Shipping</span>
+              <select
+                aria-label="Shipping method"
+                value={quote.shippingMethod ?? DEFAULT_SHIPPING_METHOD}
+                onChange={(e) =>
+                  setQuote((prev) => ({
+                    ...prev,
+                    shippingMethod: e.target.value,
+                  }))
+                }
+                style={{
+                  flex: "0 0 auto",
+                  width: 108,
+                  minWidth: 96,
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 6,
+                  padding: "8px 28px 8px 10px",
+                  fontSize: 14,
+                  font: "inherit",
+                  background: "#fff",
+                  color: "#1f2937",
+                  cursor: "pointer",
+                }}
+              >
+                {SHIPPING_METHOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={shippingDestinationDisplay}

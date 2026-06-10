@@ -4,7 +4,7 @@ import { apiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
-import { formatShippingDestination } from "./shippingDestination";
+import { formatShippingTotalLabel } from "./shippingMethod";
 import { formatTaxRowLabel } from "./taxLabel";
 
 function safeFilenamePart(s: string): string {
@@ -363,11 +363,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   };
   drawTotal("Subtotal", quote.subtotal);
   if (quote.discountTotal > 0) drawTotal("Discounts", -quote.discountTotal);
-  const shippingDest = formatShippingDestination(quote.shippingState, quote.shippingZip);
-  const shippingLabel = shippingDest
-    ? `Shipping to ${shippingDest.replace(/, /g, " ")}`
-    : "Shipping";
-  drawTotal(shippingLabel, quote.shippingTotal);
+  drawTotal(formatShippingTotalLabel(quote), quote.shippingTotal);
   drawTotal(formatTaxRowLabel(quote.taxDescription, quote.shippingState), quote.taxTotal);
   drawTotal("TOTAL", quote.grandTotal, true);
 
