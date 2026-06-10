@@ -290,9 +290,12 @@ export default function QuoteBuilderPage() {
   /** Draft while the % field is focused so partial values like "10" are not overwritten. */
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
   const [shippingDestinationDraft, setShippingDestinationDraft] = useState<string | null>(null);
+  const [taxRowLabelDraft, setTaxRowLabelDraft] = useState<string | null>(null);
   const shippingDestinationText = formatShippingDestination(quote.shippingState, quote.shippingZip);
   const shippingDestinationDisplay =
     shippingDestinationDraft !== null ? shippingDestinationDraft : shippingDestinationText;
+  const taxRowLabelText = formatTaxRowLabel(quote.taxDescription, quote.shippingState);
+  const taxRowLabelDisplay = taxRowLabelDraft !== null ? taxRowLabelDraft : taxRowLabelText;
 
   const applyShippingDestination = (raw: string) => {
     const trimmed = raw.trim();
@@ -305,6 +308,14 @@ export default function QuoteBuilderPage() {
       ...prev,
       shippingState: state || null,
       shippingZip: zip || null,
+    }));
+  };
+
+  const applyTaxRowLabel = (raw: string) => {
+    const trimmed = raw.trim();
+    setQuote((prev) => ({
+      ...prev,
+      taxDescription: trimmed || null,
     }));
   };
 
@@ -1970,9 +1981,19 @@ export default function QuoteBuilderPage() {
               />
             </div>
             <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
-                {formatTaxRowLabel(quote.taxDescription, quote.shippingState)}
-              </span>
+              <input
+                type="text"
+                value={taxRowLabelDisplay}
+                onFocus={() => setTaxRowLabelDraft(taxRowLabelText)}
+                onBlur={() => {
+                  applyTaxRowLabel(taxRowLabelDraft ?? taxRowLabelText);
+                  setTaxRowLabelDraft(null);
+                }}
+                onChange={(e) => setTaxRowLabelDraft(e.target.value)}
+                placeholder="Tax"
+                aria-label="Tax label"
+                style={{ flex: 1, minWidth: 0, maxWidth: 200 }}
+              />
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <input
