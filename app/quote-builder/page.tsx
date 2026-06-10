@@ -368,6 +368,24 @@ export default function QuoteBuilderPage() {
     });
   };
 
+  const moveLineItem = (fromIndex: number, direction: "up" | "down") => {
+    setQuote((prev) => {
+      const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+      if (toIndex < 0 || toIndex >= prev.items.length) return prev;
+      const items = [...prev.items];
+      const moving = items[fromIndex];
+      const target = items[toIndex];
+      if (!moving || !target) return prev;
+      items[fromIndex] = target;
+      items[toIndex] = moving;
+      const reordered = items.map((item, i) => ({ ...item, sortOrder: i + 1 }));
+      return {
+        ...prev,
+        ...recalcQuotePreservingTaxRate(prev, reordered),
+      };
+    });
+  };
+
   const normalizeForMatch = (value: string): string => value.trim().toLowerCase();
 
   const collectAvailableOptionsForItem = (item: QuoteItem): string[] => {
@@ -1417,6 +1435,44 @@ export default function QuoteBuilderPage() {
                 <Fragment key={item.id}>
                 <tr>
                   <td>
+                    <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                      <button
+                        type="button"
+                        className="line-item-move-btn"
+                        aria-label={`Move ${item.name} up`}
+                        title="Move up"
+                        disabled={index === 0 || quote.items.length <= 1}
+                        onClick={() => moveLineItem(index, "up")}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M12 19V5M5 12l7-7 7 7"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="line-item-move-btn"
+                        aria-label={`Move ${item.name} down`}
+                        title="Move down"
+                        disabled={index === quote.items.length - 1 || quote.items.length <= 1}
+                        onClick={() => moveLineItem(index, "down")}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M12 5v14M5 12l7 7 7-7"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    </div>
                     <input
                       value={item.sku ?? ""}
                       placeholder="Custom"
