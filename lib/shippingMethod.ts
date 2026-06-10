@@ -1,5 +1,4 @@
 import type { CartPayload, CartShippingOption } from "./extractCartFromPage";
-import { formatShippingDestination } from "./shippingDestination";
 
 /** Manual builder option — always rendered last in the shipping dropdown. */
 export const CUSTOM_SHIPPING_METHOD_VALUE = "6";
@@ -113,19 +112,26 @@ type ShippingRowQuote = {
   shippingZip?: string | null;
 };
 
-/** Method and destination suffix for preview / exports (omits "Please Select"). */
-export function formatShippingRowAnnotation(quote: ShippingRowQuote): string | null {
-  const parts = [
-    formatShippingMethodLabel(quote.shippingMethod, quote.shippingOptions),
-    formatShippingDestination(quote.shippingState, quote.shippingZip),
-  ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(" · ") : null;
+/** Compact method name for preview / exports (omits "Please Select", $ amounts, and "Shipping"). */
+export function formatShippingMethodDisplayLabel(
+  value: string | null | undefined,
+  cartOptions?: CartShippingOption[] | null,
+): string | null {
+  const raw = formatShippingMethodLabel(value, cartOptions);
+  if (!raw) return null;
+  const compact = formatShippingOptionDisplayLabel(raw);
+  return compact || null;
 }
 
-/** Left-column shipping label for PDF / Excel totals. */
+/** Compact shipping method suffix (no destination or amount). */
+export function formatShippingRowAnnotation(quote: ShippingRowQuote): string | null {
+  return formatShippingMethodDisplayLabel(quote.shippingMethod, quote.shippingOptions);
+}
+
+/** Left-column shipping label for preview / PDF / Excel totals. */
 export function formatShippingTotalLabel(quote: ShippingRowQuote): string {
-  const annotation = formatShippingRowAnnotation(quote);
-  return annotation ? `Shipping · ${annotation}` : "Shipping";
+  const method = formatShippingRowAnnotation(quote);
+  return method ? `Shipping ${method}` : "Shipping";
 }
 
 export function findCartShippingOption(
