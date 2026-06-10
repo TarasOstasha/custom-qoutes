@@ -181,6 +181,7 @@ router.post("/scrape-cart", async (req, res) => {
         const payload = await (0, scrapeStorefrontCart_1.scrapeVolusionStorefrontCart)({
             ...(cartUrl ? { cartUrl } : {}),
         });
+        console.log("API RESPONSE shippingOptions", payload.shippingOptions);
         return res.json(payload);
     }
     catch (error) {

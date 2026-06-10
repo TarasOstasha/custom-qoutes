@@ -776,7 +776,7 @@ async function extractCartPayloadInBrowser() {
  * Parses Volusion ShoppingCart.asp in the current browser tab (same origin as cart).
  */
 function normalizeCartPayloadImages(payload) {
-    return {
+    const normalized = {
         ...payload,
         cartItems: payload.cartItems.map((row) => {
             const imageUrl = (0, normalizeProductImageUrl_1.normalizeProductImageUrl)(row.imageUrl ?? null);
@@ -786,6 +786,19 @@ function normalizeCartPayloadImages(payload) {
             };
         }),
     };
+    if (payload.shippingOptions) {
+        normalized.shippingOptions = payload.shippingOptions;
+    }
+    if (payload.selectedShippingValue) {
+        normalized.selectedShippingValue = payload.selectedShippingValue;
+    }
+    if (payload.selectedShippingOption !== undefined) {
+        normalized.selectedShippingOption = payload.selectedShippingOption;
+    }
+    if (payload.shippingLabel !== undefined) {
+        normalized.shippingLabel = payload.shippingLabel;
+    }
+    return normalized;
 }
 async function extractCartFromPage() {
     if (typeof window === "undefined") {

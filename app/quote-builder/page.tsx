@@ -218,6 +218,7 @@ export default function QuoteBuilderPage() {
       return {
         ...prev,
         ...recalculated,
+        shippingLabel: prev.shippingLabel?.trim() || null,
       };
     });
   };
@@ -628,17 +629,20 @@ export default function QuoteBuilderPage() {
     setQuote((prev) => {
       const items = [...prev.items, ...mappedItems];
       const taxRatePercent = parsedTaxRate ?? prev.taxRatePercent ?? null;
+      const nextShippingTotal = payload.shippingTotal ?? prev.shippingTotal;
+
       return {
         ...prev,
         ...recalcQuotePreservingTaxRate(
           { ...prev, taxRatePercent },
           items,
           {
-            shippingTotal: payload.shippingTotal ?? prev.shippingTotal,
+            shippingTotal: nextShippingTotal,
             taxTotal: payload.taxTotal ?? prev.taxTotal,
             taxRatePercent,
           }
         ),
+        shippingLabel: payload.shippingLabel || prev.shippingLabel || null,
         shippingState: payload.shippingState?.trim() || prev.shippingState || null,
         shippingZip: payload.shippingZip?.trim() || prev.shippingZip || null,
         taxDescription: taxDescription || prev.taxDescription || null,

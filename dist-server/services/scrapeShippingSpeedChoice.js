@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.scrapeShippingSpeedChoiceViaEval = scrapeShippingSpeedChoiceViaEval;
 exports.scrapeShippingSpeedChoiceFromPage = scrapeShippingSpeedChoiceFromPage;
 exports.applyShippingSpeedChoiceToPayload = applyShippingSpeedChoiceToPayload;
 const extractShippingSpeedChoiceInBrowser_1 = require("../lib/extractShippingSpeedChoiceInBrowser");
@@ -48,7 +49,71 @@ function parseShippingOptionRows(rows) {
         shippingTotal,
     };
 }
-/** Read Volusion ShippingSpeedChoice via Playwright locator (no page.evaluate function serialization). */
+function mapEvalOptionsToScrape(data) {
+    if (!data.shippingOptions.length)
+        return null;
+    const shippingOptions = data.shippingOptions.map((option) => ({
+        label: option.label,
+        value: option.value,
+        price: option.price,
+        selected: Boolean(option.selected || (data.selectedShippingValue && option.value === data.selectedShippingValue)),
+    }));
+    const selectedShippingOption = shippingOptions.find((option) => option.value === data.selectedShippingValue) ??
+        shippingOptions.find((option) => option.selected) ??
+        null;
+    const selectedShippingValue = data.selectedShippingValue || selectedShippingOption?.value || "";
+    const shippingTotal = selectedShippingOption?.price != null && Number.isFinite(selectedShippingOption.price)
+        ? selectedShippingOption.price
+        : 0;
+    return {
+        shippingOptions,
+        selectedShippingValue,
+        selectedShippingOption,
+        shippingTotal,
+    };
+}
+/** Direct DOM read via `page.$eval` — does not submit or change the live cart select. */
+async function scrapeShippingSpeedChoiceViaEval(page) {
+    try {
+        await page.waitForSelector('select[name="ShippingSpeedChoice"] option[value]:not([value="0"])', { timeout: 10000 });
+        const shippingData = await page.$eval('select[name="ShippingSpeedChoice"]', (selectEl) => {
+            const select = selectEl;
+            const options = Array.from(select.options)
+                .map((option) => {
+                const label = option.textContent?.trim() || "";
+                const priceToken = label.match(/\$([\d,]+(?:\.\d{2})?)/)?.[1];
+                return {
+                    label,
+                    value: option.value,
+                    price: priceToken ? Number(priceToken.replace(/,/g, "")) : null,
+                    selected: option.selected,
+                };
+            })
+                .filter((option) => option.label &&
+                option.value !== "0" &&
+                !option.label.toUpperCase().includes("PLEASE SELECT"));
+            const selectedOption = options.find((option) => option.selected) || null;
+            return {
+                shippingOptions: options,
+                selectedShippingValue: selectedOption?.value || "",
+                selectedShippingOption: selectedOption,
+                shippingTotal: selectedOption?.price ?? 0,
+            };
+        });
+        console.log("DIRECT SHIPPING DATA", shippingData);
+        return mapEvalOptionsToScrape(shippingData);
+    }
+    catch (error) {
+        console.log("DIRECT SHIPPING SCRAPE FAILED", error);
+        return {
+            shippingOptions: [],
+            selectedShippingValue: "",
+            selectedShippingOption: null,
+            shippingTotal: 0,
+        };
+    }
+}
+/** Read Volusion ShippingSpeedChoice via Playwright locator (fallback). */
 async function scrapeShippingSpeedChoiceFromPage(page) {
     const select = page.locator(extractShippingSpeedChoiceInBrowser_1.SHIPPING_SPEED_SELECT_SELECTOR).first();
     if ((await select.count()) === 0)
@@ -65,11 +130,9 @@ async function scrapeShippingSpeedChoiceFromPage(page) {
 }
 function applyShippingSpeedChoiceToPayload(payload, scrape) {
     payload.shippingOptions = scrape.shippingOptions;
-    if (scrape.selectedShippingValue) {
-        payload.selectedShippingValue = scrape.selectedShippingValue;
-        payload.selectedShippingOption = scrape.selectedShippingOption;
-    }
-    if (scrape.shippingTotal > 0 && payload.shippingTotal <= 0) {
+    payload.selectedShippingValue = scrape.selectedShippingValue;
+    payload.selectedShippingOption = scrape.selectedShippingOption;
+    if (scrape.shippingTotal > 0) {
         payload.shippingTotal = scrape.shippingTotal;
     }
 }

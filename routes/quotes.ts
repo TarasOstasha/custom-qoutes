@@ -211,6 +211,7 @@ router.post("/scrape-cart", async (req: Request, res: Response) => {
     const payload = await scrapeVolusionStorefrontCart({
       ...(cartUrl ? { cartUrl } : {}),
     });
+    console.log("API RESPONSE scrape-cart shippingTotal:", payload.shippingTotal);
     return res.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to scrape cart";
@@ -319,11 +320,6 @@ const createQuote = async (req: Request, res: Response) => {
         shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
         shippingState: toStringOrNull(pickBodyValue(body, "shipping_state", "shippingState")),
         shippingZip: toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip")),
-        shippingOptionsJson:
-          pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null,
-        selectedShippingValue: toStringOrNull(
-          pickBodyValue(body, "selected_shipping_value", "selectedShippingValue"),
-        ),
         taxRate: toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate")),
         taxAmount: toDecimalStringOrNull(pickBodyValue(body, "tax_amount", "taxAmount")),
         taxLabel: toStringOrNull(pickBodyValue(body, "tax_label", "taxLabel")),
@@ -416,15 +412,6 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
     if (pickBodyValue(body, "shipping_zip", "shippingZip") !== undefined) {
       updates.shippingZip = toStringOrNull(pickBodyValue(body, "shipping_zip", "shippingZip"));
-    }
-    if (pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") !== undefined) {
-      updates.shippingOptionsJson =
-        pickBodyValue(body, "shipping_options_json", "shippingOptionsJson") ?? null;
-    }
-    if (pickBodyValue(body, "selected_shipping_value", "selectedShippingValue") !== undefined) {
-      updates.selectedShippingValue = toStringOrNull(
-        pickBodyValue(body, "selected_shipping_value", "selectedShippingValue"),
-      );
     }
     if (pickBodyValue(body, "tax_rate", "taxRate") !== undefined) {
       updates.taxRate = toDecimalStringOrNull(pickBodyValue(body, "tax_rate", "taxRate"));

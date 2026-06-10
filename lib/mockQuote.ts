@@ -1,5 +1,3 @@
-import type { ShippingOption } from "./shippingOptions";
-
 export type QuoteItem = {
   id: string;
   quoteId: string;
@@ -42,8 +40,6 @@ export type Quote = {
   shippingLabel?: string | null;
   shippingState?: string | null;
   shippingZip?: string | null;
-  shippingOptions?: ShippingOption[];
-  selectedShippingValue?: string | null;
   taxTotal: number;
   taxLabel?: string | null;
   /** Raw cart tax label from `.v65-cart-taxtext-cell b` (replaces "Tax" in totals). */
@@ -76,8 +72,6 @@ export const mockQuote: Quote = {
   shippingLabel: null,
   shippingState: null,
   shippingZip: null,
-  shippingOptions: [],
-  selectedShippingValue: null,
   taxTotal: 0,
   taxLabel: null,
   taxDescription: null,
@@ -171,8 +165,6 @@ export function createEmptyQuote(): Quote {
     shippingLabel: null,
     shippingState: null,
     shippingZip: null,
-    shippingOptions: [],
-    selectedShippingValue: null,
     taxTotal: 0,
     taxLabel: null,
     taxDescription: null,

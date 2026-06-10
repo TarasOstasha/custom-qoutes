@@ -34,24 +34,24 @@ function resolveDefaultShippingSelection(options, shippingTotal, selectedValue, 
     if (!scraped.length) {
         return shippingTotal > 0 || selectedValue ? exports.SHIPPING_CUSTOM_VALUE : null;
     }
+    if (selectedValue && selectedValue !== exports.SHIPPING_CUSTOM_VALUE) {
+        const byValue = scraped.find((option) => option.value === selectedValue);
+        if (byValue)
+            return byValue.value;
+    }
+    const preselected = scraped.find((option) => option.selected);
+    if (preselected)
+        return preselected.value;
+    if (selectedLabel && !isPlaceholderShippingOption(selectedLabel)) {
+        const byLabel = scraped.find((option) => option.label === selectedLabel);
+        if (byLabel)
+            return byLabel.value;
+    }
     if (shippingTotal > 0) {
         const byAmount = scraped.find((option) => Math.abs(shippingOptionPrice(option) - shippingTotal) < 0.02);
         if (byAmount)
             return byAmount.value;
     }
-    if (selectedValue && selectedValue !== exports.SHIPPING_CUSTOM_VALUE) {
-        const byValue = scraped.find((option) => option.value === selectedValue);
-        if (byValue)
-            return byValue.value;
-        if (selectedLabel && !isPlaceholderShippingOption(selectedLabel)) {
-            const byLabel = scraped.find((option) => option.label === selectedLabel);
-            if (byLabel)
-                return byLabel.value;
-        }
-    }
-    const preselected = scraped.find((option) => option.selected);
-    if (preselected)
-        return preselected.value;
     return scraped[0]?.value ?? exports.SHIPPING_CUSTOM_VALUE;
 }
 /** Normalize scraped/API payloads (supports legacy `amount` field). */
@@ -83,8 +83,17 @@ function normalizeShippingOptions(raw) {
         .filter((option) => option !== null);
 }
 function mergeShippingOptions(incoming, existing) {
-    const normalizedIncoming = normalizeShippingOptions(incoming);
-    if (normalizedIncoming.length)
-        return normalizedIncoming;
+    if (Array.isArray(incoming) && incoming.length > 0) {
+        const normalizedIncoming = normalizeShippingOptions(incoming);
+        if (normalizedIncoming.length)
+            return normalizedIncoming;
+        return incoming.filter((option) => Boolean(option) &&
+            typeof option === "object" &&
+            typeof option.label === "string" &&
+            typeof option.value === "string" &&
+            !(option.isCustom ?? false) &&
+            option.value !== exports.SHIPPING_CUSTOM_VALUE &&
+            option.value !== "0");
+    }
     return normalizeShippingOptions(existing ?? []);
 }

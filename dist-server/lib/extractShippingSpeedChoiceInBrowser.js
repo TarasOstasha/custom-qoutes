@@ -73,7 +73,7 @@ function applyShippingSpeedChoiceToPayload(payload, scrape) {
         payload.selectedShippingValue = scrape.selectedShippingValue;
         payload.selectedShippingOption = scrape.selectedShippingOption;
     }
-    if (scrape.shippingTotal > 0 && payload.shippingTotal <= 0) {
+    if (scrape.shippingTotal > 0) {
         payload.shippingTotal = scrape.shippingTotal;
     }
 }

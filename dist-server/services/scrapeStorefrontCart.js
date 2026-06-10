@@ -194,10 +194,16 @@ async function scrapeVolusionStorefrontCart(options = {}) {
     }
     let raw = await page.evaluate(extractCartFromPage_1.extractCartPayloadInBrowser);
     const mergeDedicatedShippingScrape = async () => {
-        const shippingScrape = await (0, scrapeShippingSpeedChoice_1.scrapeShippingSpeedChoiceFromPage)(page);
-        if (!shippingScrape?.shippingOptions.length)
+        const shippingData = (await (0, scrapeShippingSpeedChoice_1.scrapeShippingSpeedChoiceViaEval)(page)) ??
+            (await (0, scrapeShippingSpeedChoice_1.scrapeShippingSpeedChoiceFromPage)(page));
+        if (!shippingData?.shippingOptions.length)
             return false;
-        (0, scrapeShippingSpeedChoice_1.applyShippingSpeedChoiceToPayload)(raw, shippingScrape);
+        raw.shippingOptions = shippingData.shippingOptions;
+        raw.selectedShippingValue = shippingData.selectedShippingValue;
+        raw.selectedShippingOption = shippingData.selectedShippingOption;
+        if (shippingData.shippingTotal > 0) {
+            raw.shippingTotal = shippingData.shippingTotal;
+        }
         return true;
     };
     await mergeDedicatedShippingScrape();
@@ -213,10 +219,12 @@ async function scrapeVolusionStorefrontCart(options = {}) {
     }
     console.log("[scrape-cart] ShippingSpeedChoice:", await page.locator(extractShippingSpeedChoiceInBrowser_1.SHIPPING_SPEED_SELECT_SELECTOR).count(), "options:", raw.shippingOptions?.length ?? 0);
     if (debug) {
-        console.error("[scrape-cart] shippingOptions:", raw.shippingOptions?.length ?? 0);
+        console.error("[scrape-cart] shippingOptions:", raw.shippingOptions ?? []);
         console.error("[scrape-cart] selectedShippingValue:", raw.selectedShippingValue ?? null);
+        console.error("[scrape-cart] selectedShippingOption:", raw.selectedShippingOption ?? null);
         console.error("[scrape-cart] shippingTotal:", raw.shippingTotal);
     }
+    console.log("SCRAPED shippingOptions", raw.shippingOptions);
     return (0, extractCartFromPage_1.normalizeCartPayloadImages)(raw);
 }
 function resolveClearCartUrl(cartUrl) {
