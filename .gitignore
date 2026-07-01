@@ -67,3 +67,5 @@ tests/httpRequests/*.http
 dist-electron/
 
 Insrt.md
+
+.env-backup

@@ -8,6 +8,7 @@ exports.formatShippingMethodLabel = formatShippingMethodLabel;
 exports.serializeShippingMethodForDb = serializeShippingMethodForDb;
 exports.parseShippingMethodFromDb = parseShippingMethodFromDb;
 exports.parseShippingOptionsFromDb = parseShippingOptionsFromDb;
+exports.formatShippingMethodDisplayLabel = formatShippingMethodDisplayLabel;
 exports.formatShippingRowAnnotation = formatShippingRowAnnotation;
 exports.formatShippingTotalLabel = formatShippingTotalLabel;
 exports.findCartShippingOption = findCartShippingOption;
@@ -18,7 +19,6 @@ exports.resolveShippingMethodFromShippingOptions = resolveShippingMethodFromShip
 exports.resolveEffectiveShippingMethod = resolveEffectiveShippingMethod;
 exports.resolveShippingMethodFromCartPayload = resolveShippingMethodFromCartPayload;
 exports.cartPayloadHasShippingChoice = cartPayloadHasShippingChoice;
-const shippingDestination_1 = require("./shippingDestination");
 /** Manual builder option — always rendered last in the shipping dropdown. */
 exports.CUSTOM_SHIPPING_METHOD_VALUE = "6";
 /** Static builder options (cart-imported methods are inserted before Custom). */
@@ -105,18 +105,22 @@ function parseShippingOptionsFromDb(value) {
     }
     return options.length ? options : null;
 }
-/** Method and destination suffix for preview / exports (omits "Please Select"). */
-function formatShippingRowAnnotation(quote) {
-    const parts = [
-        formatShippingMethodLabel(quote.shippingMethod, quote.shippingOptions),
-        (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip),
-    ].filter((part) => Boolean(part));
-    return parts.length > 0 ? parts.join(" · ") : null;
+/** Compact method name for preview / exports (omits "Please Select", $ amounts, and "Shipping"). */
+function formatShippingMethodDisplayLabel(value, cartOptions) {
+    const raw = formatShippingMethodLabel(value, cartOptions);
+    if (!raw)
+        return null;
+    const compact = formatShippingOptionDisplayLabel(raw);
+    return compact || null;
 }
-/** Left-column shipping label for PDF / Excel totals. */
+/** Compact shipping method suffix (no destination or amount). */
+function formatShippingRowAnnotation(quote) {
+    return formatShippingMethodDisplayLabel(quote.shippingMethod, quote.shippingOptions);
+}
+/** Left-column shipping label for preview / PDF / Excel totals. */
 function formatShippingTotalLabel(quote) {
-    const annotation = formatShippingRowAnnotation(quote);
-    return annotation ? `Shipping · ${annotation}` : "Shipping";
+    const method = formatShippingRowAnnotation(quote);
+    return method ? `Shipping ${method}` : "Shipping";
 }
 function findCartShippingOption(cartOptions, value) {
     if (!value)

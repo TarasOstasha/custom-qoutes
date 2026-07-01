@@ -60,7 +60,7 @@ QuoteItem.init({
         field: "updated_at",
     },
 }, {
-    sequelize: sequelize_2.sequelize,
+    sequelize: (0, sequelize_2.getActiveSequelize)(),
     modelName: "QuoteItem",
     tableName: "quote_items",
     underscored: true,

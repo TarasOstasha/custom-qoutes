@@ -8,10 +8,9 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const uploadsDir_1 = require("../lib/uploadsDir");
 const router = (0, express_1.Router)();
-const uploadsDir = (0, uploadsDir_1.getUploadsDir)();
 const storage = multer_1.default.diskStorage({
     destination: (_req, _file, cb) => {
-        cb(null, uploadsDir);
+        cb(null, (0, uploadsDir_1.getUploadsDir)());
     },
     filename: (_req, file, cb) => {
         const ext = path_1.default.extname(file.originalname).toLowerCase();

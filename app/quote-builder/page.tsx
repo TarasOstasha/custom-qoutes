@@ -201,6 +201,8 @@ export default function QuoteBuilderPage() {
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
   const [saveQuoteError, setSaveQuoteError] = useState<string | null>(null);
+  const [persistenceAvailable, setPersistenceAvailable] = useState<boolean | null>(null);
+  const [persistenceRetryLoading, setPersistenceRetryLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -214,6 +216,71 @@ export default function QuoteBuilderPage() {
     () => recalcQuote(quote.items, { shippingTotal: quote.shippingTotal, taxTotal: quote.taxTotal }),
     [quote.items, quote.shippingTotal, quote.taxTotal]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    const loadPersistenceStatus = async (force = false) => {
+      try {
+        const query = force ? "?force=1" : "";
+        const response = await fetch(`${apiBase}/health${query}`);
+        if (!response.ok) return null;
+        const data = (await response.json()) as { persistenceAvailable?: boolean };
+        const available = Boolean(data.persistenceAvailable);
+        if (!cancelled) {
+          setPersistenceAvailable(available);
+        }
+        return available;
+      } catch {
+        if (!cancelled) {
+          setPersistenceAvailable(false);
+        }
+        return false;
+      }
+    };
+
+    const scheduleRetry = () => {
+      retryTimer = window.setTimeout(async () => {
+        if (cancelled) return;
+        const available = await loadPersistenceStatus(true);
+        if (!cancelled && !available) {
+          scheduleRetry();
+        }
+      }, 10_000);
+    };
+
+    void loadPersistenceStatus().then((available) => {
+      if (!cancelled && available === false) {
+        scheduleRetry();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, []);
+
+  const retryDatabaseConnection = async () => {
+    setPersistenceRetryLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/health?force=1`);
+      if (!response.ok) {
+        setPersistenceAvailable(false);
+        return;
+      }
+      const data = (await response.json()) as { persistenceAvailable?: boolean };
+      setPersistenceAvailable(Boolean(data.persistenceAvailable));
+    } catch {
+      setPersistenceAvailable(false);
+    } finally {
+      setPersistenceRetryLoading(false);
+    }
+  };
+
   const shippingMethodSelectOptions = useMemo(
     () => buildShippingMethodSelectOptions(quote.shippingOptions),
     [quote.shippingOptions],
@@ -1070,9 +1137,25 @@ export default function QuoteBuilderPage() {
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
       const isJson = contentType.includes("application/json");
       const parsedBody = isJson
-        ? ((await response.json()) as { id?: string; error?: string; message?: string })
+        ? ((await response.json()) as {
+            id?: string;
+            error?: string;
+            message?: string;
+            persisted?: boolean;
+            offline?: boolean;
+          })
         : await response.text();
       console.log("[saveQuote] response:", { quoteId: activeQuoteId, method, url, response: parsedBody });
+
+      if (response.ok && isJson && parsedBody && typeof parsedBody === "object") {
+        const body = parsedBody as { offline?: boolean; persisted?: boolean; message?: string };
+        if (body.offline && body.persisted === false) {
+          setSaveQuoteSuccess(
+            body.message ?? "Quote kept locally only — database is unavailable.",
+          );
+          return;
+        }
+      }
 
       if (!response.ok) {
         if (isJson) {
@@ -1130,7 +1213,10 @@ export default function QuoteBuilderPage() {
           throw new Error(String(parsedBody || "Failed to search quotes"));
         }
 
-        const data = parsedBody as { data?: QuoteSearchResult[] };
+        const data = parsedBody as { data?: QuoteSearchResult[]; offline?: boolean };
+        if (data.offline) {
+          setSearchError("Quote search is unavailable — database is not connected.");
+        }
         setSearchResults(Array.isArray(data.data) ? data.data : []);
       } catch (error) {
         setSearchError(error instanceof Error ? error.message : "Failed to search quotes");
@@ -1273,6 +1359,35 @@ export default function QuoteBuilderPage() {
           `,
         }}
       />
+      {persistenceAvailable === false ? (
+        <div
+          className="card section"
+          style={{
+            marginBottom: 16,
+            background: "#fffbeb",
+            border: "1px solid #f59e0b",
+            color: "#92400e",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            <strong>Database offline.</strong> The app tries office LAN and Tailscale automatically.
+            Connect to your network, then retry — no restart needed.
+          </span>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void retryDatabaseConnection()}
+            disabled={persistenceRetryLoading}
+          >
+            {persistenceRetryLoading ? "Checking..." : "Retry connection"}
+          </button>
+        </div>
+      ) : null}
       <div className="card section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>

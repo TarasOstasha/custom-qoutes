@@ -8,9 +8,20 @@ import {
   openVolusionStorefrontCartSession,
   scrapeVolusionStorefrontCart,
 } from "../services/scrapeStorefrontCart";
-import { Quote, QuoteItem, sequelize } from "../lib/models";
+import { Quote, QuoteItem, getActiveSequelize } from "../lib/models";
+import {
+  isOfficePersistenceAvailable,
+  OFFLINE_PERSISTENCE_MESSAGE,
+} from "../lib/officePersistence";
 
 const router = Router();
+
+const offlineListResponse = () => ({ data: [], offline: true as const });
+const offlineSaveResponse = () => ({
+  persisted: false as const,
+  offline: true as const,
+  message: OFFLINE_PERSISTENCE_MESSAGE,
+});
 const toStringOrNull = (value: unknown): string | null => {
   if (value === undefined || value === null) return null;
   return String(value);
@@ -73,6 +84,10 @@ const mapQuoteItemInput = (item: unknown, quoteId: string) => {
 
 const getQuotes = async (_req: Request, res: Response) => {
   try {
+    if (!(await isOfficePersistenceAvailable())) {
+      return res.json(offlineListResponse());
+    }
+
     const records = await Quote.findAll({
       include: [{ model: QuoteItem, as: "items" }],
       order: [["createdAt", "DESC"]],
@@ -91,6 +106,10 @@ router.get("/search", async (req: Request, res: Response) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) {
       return res.json({ data: [] });
+    }
+
+    if (!(await isOfficePersistenceAvailable())) {
+      return res.json(offlineListResponse());
     }
 
     const records = await Quote.findAll({
@@ -291,6 +310,14 @@ router.get("/:id", async (req: Request, res: Response) => {
     if (!uuidV4LikePattern.test(quoteId)) {
       return res.status(400).json({ error: "Invalid quote id" });
     }
+
+    if (!(await isOfficePersistenceAvailable())) {
+      return res.status(503).json({
+        error: "Database is unavailable — saved quotes cannot be loaded.",
+        offline: true,
+      });
+    }
+
     const quote = await Quote.findByPk(quoteId, {
       include: [{ model: QuoteItem, as: "items" }],
     });
@@ -305,7 +332,11 @@ router.get("/:id", async (req: Request, res: Response) => {
 });
 
 const createQuote = async (req: Request, res: Response) => {
-  const tx = await sequelize.transaction();
+  if (!(await isOfficePersistenceAvailable())) {
+    return res.status(200).json(offlineSaveResponse());
+  }
+
+  const tx = await getActiveSequelize().transaction();
   try {
     const body = req.body as Record<string, unknown>;
     const items = Array.isArray(body.items) ? body.items : [];
@@ -367,7 +398,11 @@ const createQuote = async (req: Request, res: Response) => {
 router.post("/", createQuote);
 
 router.put("/:id", async (req: Request, res: Response) => {
-  const tx = await sequelize.transaction();
+  if (!(await isOfficePersistenceAvailable())) {
+    return res.status(200).json(offlineSaveResponse());
+  }
+
+  const tx = await getActiveSequelize().transaction();
   try {
     const quoteId = String(req.params.id);
     if (!uuidV4LikePattern.test(quoteId)) {
@@ -474,6 +509,13 @@ router.put("/:id", async (req: Request, res: Response) => {
 
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
+    if (!(await isOfficePersistenceAvailable())) {
+      return res.status(503).json({
+        error: "Database is unavailable — quotes cannot be deleted.",
+        offline: true,
+      });
+    }
+
     const quoteId = String(req.params.id);
     const deleted = await Quote.destroy({ where: { id: quoteId } });
     if (!deleted) {

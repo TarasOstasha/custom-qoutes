@@ -351,7 +351,11 @@ async function exportQuoteToExcel(quote) {
     addTotalRow((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal, {
         textValue: quote.taxLabel?.trim() || null,
     });
-    addTotalRow("TOTAL", quote.grandTotal, { bold: true, thickTop: true });
+    addTotalRow("TOTAL", quote.grandTotal, {
+        bold: true,
+        thickTop: true,
+        textValue: (0, taxLabel_1.quoteGrandTotalIsTbd)(quote) ? "TBD" : null,
+    });
     row += 1;
     ws.mergeCells(`A${row}:E${row}`);
     ws.getCell(`A${row}`).value = "NOTES:";

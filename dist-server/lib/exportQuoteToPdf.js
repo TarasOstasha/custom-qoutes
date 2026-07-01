@@ -308,19 +308,28 @@ async function exportQuoteToPdf(quote) {
     const totalsXLabel = pageWidth - margin - 170;
     const totalsXValue = pageWidth - margin;
     let totalsY = tableEndY + 10;
-    const drawTotal = (label, value, bold = false) => {
+    const drawTotal = (label, value, opts) => {
+        const bold = opts?.bold ?? false;
+        const display = opts?.textValue?.trim() ? opts.textValue.trim() : money(value);
         doc.setFont("helvetica", bold ? "bold" : "normal");
         doc.setFontSize(12);
         doc.text(label, totalsXLabel, totalsY, { align: "right" });
-        doc.text(money(value), totalsXValue, totalsY, { align: "right" });
+        doc.text(display, totalsXValue, totalsY, { align: "right" });
         totalsY += 20;
     };
     drawTotal("Subtotal", quote.subtotal);
     if (quote.discountTotal > 0)
         drawTotal("Discounts", -quote.discountTotal);
-    drawTotal((0, shippingMethod_1.formatShippingTotalLabel)(quote), quote.shippingTotal);
-    drawTotal((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal);
-    drawTotal("TOTAL", quote.grandTotal, true);
+    drawTotal((0, shippingMethod_1.formatShippingTotalLabel)(quote), quote.shippingTotal, {
+        textValue: quote.shippingLabel?.trim() || null,
+    });
+    drawTotal((0, taxLabel_1.formatTaxRowLabel)(quote.taxDescription, quote.shippingState), quote.taxTotal, {
+        textValue: quote.taxLabel?.trim() || null,
+    });
+    drawTotal("TOTAL", quote.grandTotal, {
+        bold: true,
+        textValue: (0, taxLabel_1.quoteGrandTotalIsTbd)(quote) ? "TBD" : null,
+    });
     const notesY = totalsY + 12;
     doc.setDrawColor(209, 213, 219);
     doc.line(margin, notesY, pageWidth - margin, notesY);

@@ -1,1 +1,1 @@
-export { sequelize } from "../db/sequelize";
+export { getActiveSequelize } from "../db/sequelize";

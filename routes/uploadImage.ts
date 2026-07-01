@@ -4,11 +4,10 @@ import path from "path";
 import { getUploadsDir } from "../lib/uploadsDir";
 
 const router = Router();
-const uploadsDir = getUploadsDir();
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    cb(null, uploadsDir);
+    cb(null, getUploadsDir());
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();

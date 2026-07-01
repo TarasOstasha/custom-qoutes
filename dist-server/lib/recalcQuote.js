@@ -62,13 +62,20 @@ function recalcQuote(items, overrides) {
  * Recompute line totals; keep a fixed cart/manual tax % when set, otherwise preserve tax $.
  */
 function recalcQuotePreservingTaxRate(prev, items, opts) {
-    const shippingTotal = round2(opts?.shippingTotal ?? prev.shippingTotal);
+    const shippingTotal = opts?.shippingTotal !== undefined
+        ? round2(opts.shippingTotal)
+        : (0, taxLabel_1.isTbdLabel)(prev.shippingLabel)
+            ? 0
+            : round2(prev.shippingTotal);
     const rate = opts?.taxRatePercent !== undefined
         ? opts.taxRatePercent
         : (0, taxLabel_1.resolveTaxRatePercent)(prev);
     let taxTotal;
     if (opts?.taxTotal !== undefined) {
         taxTotal = round2(opts.taxTotal);
+    }
+    else if ((0, taxLabel_1.isTbdLabel)(prev.taxLabel)) {
+        taxTotal = 0;
     }
     else if (rate != null && Number.isFinite(rate)) {
         const partial = recalcQuote(items, { shippingTotal, taxTotal: 0 });

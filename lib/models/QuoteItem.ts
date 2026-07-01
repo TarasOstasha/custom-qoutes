@@ -1,5 +1,5 @@
 import { DataTypes, InferAttributes, InferCreationAttributes, Model, CreationOptional } from "sequelize";
-import { sequelize } from "../sequelize";
+import { getActiveSequelize } from "../sequelize";
 
 export class QuoteItem extends Model<InferAttributes<QuoteItem>, InferCreationAttributes<QuoteItem>> {
   declare id: CreationOptional<string>;
@@ -71,7 +71,7 @@ QuoteItem.init(
     },
   },
   {
-    sequelize,
+    sequelize: getActiveSequelize(),
     modelName: "QuoteItem",
     tableName: "quote_items",
     underscored: true,

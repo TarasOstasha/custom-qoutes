@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.taxableBase = taxableBase;
 exports.parseTaxRatePercentFromDescription = parseTaxRatePercentFromDescription;
+exports.isTbdLabel = isTbdLabel;
+exports.isTaxTbd = isTaxTbd;
+exports.quoteGrandTotalIsTbd = quoteGrandTotalIsTbd;
 exports.formatTaxRatePercentInput = formatTaxRatePercentInput;
 exports.resolveTaxRatePercent = resolveTaxRatePercent;
 exports.formatTaxRowLabel = formatTaxRowLabel;
@@ -19,6 +22,15 @@ function parseTaxRatePercentFromDescription(taxDescription) {
         return null;
     const rate = Number(match[1]);
     return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+function isTbdLabel(value) {
+    return value?.trim().toLowerCase() === "tbd";
+}
+function isTaxTbd(taxLabel) {
+    return isTbdLabel(taxLabel);
+}
+function quoteGrandTotalIsTbd(quote) {
+    return isTbdLabel(quote.taxLabel) || isTbdLabel(quote.shippingLabel);
 }
 function formatTaxRatePercentInput(rate) {
     if (rate == null || !Number.isFinite(rate) || rate <= 0)
