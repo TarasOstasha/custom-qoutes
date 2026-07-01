@@ -1376,7 +1376,7 @@ export default function QuoteBuilderPage() {
         >
           <span>
             <strong>Database offline.</strong> The app tries office LAN and Tailscale automatically.
-            Connect to your network, then retry — no restart needed.
+            Connect to your network, then retry - no restart needed.
           </span>
           <button
             type="button"
