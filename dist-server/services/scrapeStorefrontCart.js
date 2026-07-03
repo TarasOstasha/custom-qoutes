@@ -48,7 +48,7 @@ async function launchVisiblePersistentContext() {
     liveContext = await playwright_1.chromium.launchPersistentContext(userDataDir, {
         headless: false,
         args: ["--window-size=1000,900"],
-        viewport: { width: 1000, height: 900 },
+        viewport: null,
         userAgent: process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     });
@@ -64,9 +64,8 @@ async function getOrCreateLiveSession(options = {}) {
     if (!liveContext) {
         liveContext = await playwright_1.chromium.launchPersistentContext(userDataDir, {
             headless,
-            //args: ["--start-maximized"],
-            args: ["--window-size=1000,900",],
-            viewport: { width: 1000, height: 900 }, //viewport: null,//{ width: 1600, height: 1000 },
+            args: ["--window-size=1000,900"],
+            viewport: null,
             userAgent: process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         });

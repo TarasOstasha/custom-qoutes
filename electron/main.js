@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 
@@ -11,7 +12,10 @@ const devRoot = path.resolve(__dirname, "..");
 const prodAppRoot = path.join(process.resourcesPath, "app");
 
 const playwrightBrowsersPath = isDev
-  ? "0"
+  ? path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "ms-playwright",
+    )
   : path.join(process.resourcesPath, "ms-playwright");
 
 process.env.PLAYWRIGHT_BROWSERS_PATH = playwrightBrowsersPath;

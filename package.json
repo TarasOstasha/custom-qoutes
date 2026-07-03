@@ -15,6 +15,7 @@
     "api:dev": "ts-node server.ts",
     "electron:start": "npm run build:prod && electron .",
     "electron:dist": "npm run build:prod && electron-builder --win nsis",
+    "postinstall": "playwright install chromium",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
