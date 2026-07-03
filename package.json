@@ -1,6 +1,6 @@
 {
   "name": "custom-quote",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "",
   "main": "electron/main.js",
   "scripts": {
@@ -25,6 +25,7 @@
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "jspdf": "^4.2.1",
@@ -86,7 +87,14 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": true
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://100.68.127.126/updates/custom-quote/"
+      }
+    ]
   }
 }

@@ -250,3 +250,126 @@ th {
     flex-direction: column;
   }
 }
+
+.app-header {
+  background: #111827;
+  color: #f9fafb;
+  border-bottom: 1px solid #1f2937;
+}
+
+.app-header-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-header-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.update-badge {
+  border: 1px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.update-badge:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.update-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+}
+
+.update-modal {
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.update-modal-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.update-modal-copy {
+  margin: 0 0 16px;
+  color: #4b5563;
+}
+
+.update-modal-versions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.update-modal-versions dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.update-modal-versions dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.update-modal-progress {
+  margin-bottom: 16px;
+}
+
+.update-modal-progress-label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.update-modal-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.update-modal-progress-bar {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
+
+.update-modal-error {
+  margin: 0 0 16px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.update-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}

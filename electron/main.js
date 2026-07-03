@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
+const { initAutoUpdater } = require("./updater");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -146,6 +147,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
@@ -159,6 +161,13 @@ function createWindow() {
     shell.openExternal(url);
     return { action: "deny" };
   });
+
+  initAutoUpdater(mainWindow, {
+    isPackaged: app.isPackaged,
+    appVersion: app.getVersion(),
+  });
+
+  return mainWindow;
 }
 
 app.whenReady().then(async () => {
