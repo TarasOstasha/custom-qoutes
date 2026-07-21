@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.preferVariantOneUrl = preferVariantOneUrl;
 exports.volusionPhotoUrlCandidates = volusionPhotoUrlCandidates;
 exports.resolveVolusionProductImageUrl = resolveVolusionProductImageUrl;
+exports.resolveVolusionProductImageUrlWithFallbacks = resolveVolusionProductImageUrlWithFallbacks;
 exports.normalizeProductImageUrl = normalizeProductImageUrl;
 const CANONICAL_STORE_ORIGIN = "https://www.xyzdisplays.com";
 const PHOTO_VARIANT = "1";
@@ -67,6 +68,23 @@ async function resolveVolusionProductImageUrl(productCode) {
     const candidates = volusionPhotoUrlCandidates(productCode ?? "");
     for (const url of candidates) {
         if (await photoUrlExists(url))
+            return url;
+    }
+    return null;
+}
+/** Try each product code in order (e.g. own SKU, then Photos_Cloned_From). */
+async function resolveVolusionProductImageUrlWithFallbacks(...productCodes) {
+    const seen = new Set();
+    for (const code of productCodes) {
+        const trimmed = code?.trim();
+        if (!trimmed)
+            continue;
+        const key = trimmed.toLowerCase();
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        const url = await resolveVolusionProductImageUrl(trimmed);
+        if (url)
             return url;
     }
     return null;

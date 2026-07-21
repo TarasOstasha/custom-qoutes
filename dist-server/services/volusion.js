@@ -26,6 +26,7 @@ function parseVolusionResponse(raw) {
         ProductID: tagValue(block, "ProductID"),
         ProductName: tagValue(block, "ProductName"),
         Vendor_PartNo: tagValue(block, "Vendor_PartNo"),
+        Photos_Cloned_From: tagValue(block, "Photos_Cloned_From"),
         ProductPrice: tagValue(block, "ProductPrice"),
         Vendor_Price: tagValue(block, "Vendor_Price"),
     };
@@ -43,7 +44,7 @@ async function toQuoteItem(product, qty, index) {
     const safeQty = toNumber(qty, 0);
     const lineSubtotal = Number((safeQty * unitPrice).toFixed(2));
     const productCode = product.ProductCode ?? product.Vendor_PartNo ?? "";
-    const imageUrl = await (0, normalizeProductImageUrl_1.resolveVolusionProductImageUrl)(productCode);
+    const imageUrl = await (0, normalizeProductImageUrl_1.resolveVolusionProductImageUrlWithFallbacks)(product.ProductCode, product.Photos_Cloned_From);
     return {
         id: `qi_cart_${Date.now()}_${index}`,
         quoteId: "",
