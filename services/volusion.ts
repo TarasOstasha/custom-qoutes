@@ -1,4 +1,4 @@
-import { resolveVolusionProductImageUrl } from "../lib/normalizeProductImageUrl";
+import { resolveVolusionProductImageUrlWithFallbacks } from "../lib/normalizeProductImageUrl";
 import { QuoteItem } from "../mock/quotes";
 
 type CartItemInput = { productCode: string; qty: number };
@@ -8,6 +8,7 @@ type VolusionProduct = {
   ProductID: string | undefined;
   ProductName: string | undefined;
   Vendor_PartNo: string | undefined;
+  Photos_Cloned_From: string | undefined;
   ProductPrice: string | number | undefined;
   Vendor_Price: string | number | undefined;
 };
@@ -38,6 +39,7 @@ function parseVolusionResponse(raw: string): VolusionProduct | null {
     ProductID: tagValue(block, "ProductID"),
     ProductName: tagValue(block, "ProductName"),
     Vendor_PartNo: tagValue(block, "Vendor_PartNo"),
+    Photos_Cloned_From: tagValue(block, "Photos_Cloned_From"),
     ProductPrice: tagValue(block, "ProductPrice"),
     Vendor_Price: tagValue(block, "Vendor_Price"),
   };
@@ -57,7 +59,10 @@ async function toQuoteItem(product: VolusionProduct, qty: number, index: number)
   const safeQty = toNumber(qty, 0);
   const lineSubtotal = Number((safeQty * unitPrice).toFixed(2));
   const productCode = product.ProductCode ?? product.Vendor_PartNo ?? "";
-  const imageUrl = await resolveVolusionProductImageUrl(productCode);
+  const imageUrl = await resolveVolusionProductImageUrlWithFallbacks(
+    product.ProductCode,
+    product.Photos_Cloned_From,
+  );
 
   return {
     id: `qi_cart_${Date.now()}_${index}`,

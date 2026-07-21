@@ -71,6 +71,23 @@ export async function resolveVolusionProductImageUrl(
   return null;
 }
 
+/** Try each product code in order (e.g. own SKU, then Photos_Cloned_From). */
+export async function resolveVolusionProductImageUrlWithFallbacks(
+  ...productCodes: (string | null | undefined)[]
+): Promise<string | null> {
+  const seen = new Set<string>();
+  for (const code of productCodes) {
+    const trimmed = code?.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const url = await resolveVolusionProductImageUrl(trimmed);
+    if (url) return url;
+  }
+  return null;
+}
+
 /**
  * Normalize scraped or stored URLs to the canonical host and `-1` photo variant.
  */
