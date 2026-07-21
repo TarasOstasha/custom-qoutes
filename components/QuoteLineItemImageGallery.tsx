@@ -6,12 +6,15 @@ type Props = {
   items: QuoteItem[];
   /** Larger tiles for estimate preview; compact strip for builder */
   variant?: "preview" | "builder";
+  /** Builder only: clear image on a line item without removing the product */
+  onRemoveImage?: (itemId: string) => void;
 };
 
-export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props) {
+export function QuoteLineItemImageGallery({ items, variant = "preview", onRemoveImage }: Props) {
   const withImages = items.filter((i) => Boolean(i.imageUrl?.trim()));
 
   const isPreview = variant === "preview";
+  const showRemove = variant === "builder" && Boolean(onRemoveImage);
   // const imgW = isPreview ? 120 : 96;
   // const imgH = isPreview ? 100 : 80;
   const imgW = isPreview ? 220 : 160;
@@ -52,6 +55,7 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
               const fallbackHref = `https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`;
               const href = imageHref ?? fallbackHref;
               return (
+            <div style={{ position: "relative", display: "inline-block" }}>
             <a
               href={href}
               target="_blank"
@@ -73,6 +77,22 @@ export function QuoteLineItemImageGallery({ items, variant = "preview" }: Props)
                 }}
               />
             </a>
+            {showRemove ? (
+              <button
+                type="button"
+                className="quote-image-remove-btn"
+                aria-label={`Remove image for ${item.name}`}
+                title="Remove image"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRemoveImage?.(item.id);
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+            </div>
               );
             })()}
             {(() => {

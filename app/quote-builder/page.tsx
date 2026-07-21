@@ -474,6 +474,23 @@ export default function QuoteBuilderPage() {
     });
   };
 
+  const removeItemImage = (itemId: string) => {
+    setQuote((prev) => {
+      const index = prev.items.findIndex((i) => i.id === itemId);
+      if (index < 0) return prev;
+      const items = [...prev.items];
+      items[index] = {
+        ...items[index],
+        imageUrl: null,
+        updatedAt: new Date().toISOString(),
+      } as QuoteItem;
+      return {
+        ...prev,
+        ...recalcQuotePreservingTaxRate(prev, items),
+      };
+    });
+  };
+
   const moveLineItem = (fromIndex: number, direction: "up" | "down") => {
     setQuote((prev) => {
       const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
@@ -1569,7 +1586,11 @@ export default function QuoteBuilderPage() {
 
         <div className="section">
           <h2 style={{ marginTop: 0 }}>Product images</h2>
-          <QuoteLineItemImageGallery items={quote.items} variant="builder" />
+          <QuoteLineItemImageGallery
+            items={quote.items}
+            variant="builder"
+            onRemoveImage={removeItemImage}
+          />
         </div>
 
         <div className="section">
