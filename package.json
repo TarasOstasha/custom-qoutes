@@ -16,7 +16,7 @@
     "electron:start": "npm run build:prod && electron .",
     "electron:dist": "npm run build:prod && electron-builder --win nsis",
     "postinstall": "playwright install chromium",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run build:api && node --test lib/quoteSaveAction.test.js"
   },
   "keywords": [],
   "author": "",

@@ -42,6 +42,7 @@ import {
   loadQuoteFromPreviewStorage,
   saveQuoteDraft,
 } from "../../lib/quotePreviewStorage";
+import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
 import AddPopupWindow from "../../components/AddPopupWindow";
 
 function currency(n: number): string {
@@ -112,7 +113,8 @@ type ApiQuoteItem = {
 
 type ApiQuote = {
   id: string;
-  quoteNumber: string;
+  quoteNumber?: string;
+  quote_number?: string;
   quoteDate: string | null;
   status: string;
   version: number;
@@ -155,9 +157,14 @@ function cartPayloadHasImportableData(payload: CartPayload): boolean {
 const dbQuoteIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function readApiQuoteNumber(data: { quoteNumber?: string; quote_number?: string }): string {
+  return normalizeQuoteNumber(data.quoteNumber ?? data.quote_number);
+}
+
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
   const [loadedQuoteId, setLoadedQuoteId] = useState<string | null>(null);
+  const [originalLoadedQuoteNumber, setOriginalLoadedQuoteNumber] = useState<string | null>(null);
   const skipNextPersist = useRef(false);
   const customImageInputRef = useRef<HTMLInputElement | null>(null);
   const [customImageTargetId, setCustomImageTargetId] = useState<string | null>(null);
@@ -177,6 +184,7 @@ export default function QuoteBuilderPage() {
           : stored.shippingOptions ?? null,
       });
       setLoadedQuoteId(dbQuoteIdPattern.test(stored.id) ? stored.id : null);
+      setOriginalLoadedQuoteNumber(stored.quoteNumber?.trim() || null);
       skipNextPersist.current = true;
     }
   }, []);
@@ -1080,72 +1088,69 @@ export default function QuoteBuilderPage() {
     }
   };
 
-  const saveQuote = async () => {
-    const activeQuoteId = loadedQuoteId ?? (dbQuoteIdPattern.test(quote.id) ? quote.id : null);
-    if (activeQuoteId) {
-      const result = await Swal.fire({
-        title: "Update existing quote?",
-        text: `Quote "${quote.quoteNumber}" already exists. Save changes to this quote?`,
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonText: "Yes, update quote",
-        cancelButtonText: "Cancel",
-        reverseButtons: true,
-      });
-      if (!result.isConfirmed) return;
+  const quoteNumberExists = async (quoteNum: string): Promise<boolean> => {
+    const response = await fetch(`${apiBase}/api/quotes/search?q=${encodeURIComponent(quoteNum)}`);
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const isJson = contentType.includes("application/json");
+    const parsedBody = isJson
+      ? ((await response.json()) as { data?: QuoteSearchResult[]; offline?: boolean })
+      : null;
+
+    if (!response.ok || !parsedBody) {
+      throw new Error("Could not check whether quote number exists");
+    }
+    if (parsedBody.offline) {
+      throw new Error("Database is unavailable — cannot create quote.");
     }
 
+    const target = quoteNum.toLowerCase();
+    const results = Array.isArray(parsedBody.data) ? parsedBody.data : [];
+    return results.some((row) => normalizeQuoteNumber(row.quoteNumber).toLowerCase() === target);
+  };
+
+  const buildSavePayload = (options?: { forceNewQuote?: boolean }) => {
+    const isNewInsert = options?.forceNewQuote ?? !loadedQuoteId;
+    return {
+      quote_number: quote.quoteNumber.trim(),
+      quote_date: quoteDateToInputValue(quote.quoteDate),
+      status: quote.status,
+      version: isNewInsert ? 1 : quote.version,
+      customer_name: quote.customerName ?? null,
+      company: quote.customerCompany ?? null,
+      email: quote.customerEmail ?? null,
+      phone: quote.customerPhone ?? null,
+      address: quote.customerAddress ?? null,
+      notes: quote.notes ?? null,
+      subtotal: Number(totals.subtotal),
+      shipping: Number(totals.shippingTotal),
+      shipping_label: quote.shippingLabel ?? null,
+      shipping_method: serializeShippingMethodForDb(quote.shippingMethod),
+      shipping_options_json: quote.shippingOptions?.length ? quote.shippingOptions : null,
+      shipping_state: quote.shippingState ?? null,
+      shipping_zip: quote.shippingZip ?? null,
+      tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
+      tax_amount: Number(totals.taxTotal),
+      tax_label: quote.taxLabel ?? null,
+      tax_description: quote.taxDescription ?? null,
+      total: Number(totals.grandTotal),
+      items: mapQuoteItemsForCreate(quote.items),
+    };
+  };
+
+  const runSaveRequest = async (
+    method: "POST" | "PUT",
+    url: string,
+    successMessage: string,
+    options?: { forceNewQuote?: boolean },
+  ) => {
     setSaveQuoteLoading(true);
     setSaveQuoteSuccess(null);
     setSaveQuoteError(null);
+
+    const payload = buildSavePayload(options);
+    console.log("[saveQuote] request:", { method, url, quoteNumber: payload.quote_number, loadedQuoteId });
+
     try {
-      const payload = {
-        quote_number: quote.quoteNumber,
-        quote_date: quoteDateToInputValue(quote.quoteDate),
-        status: quote.status,
-        version: quote.version,
-        customer_name: quote.customerName ?? null,
-        company: quote.customerCompany ?? null,
-        email: quote.customerEmail ?? null,
-        phone: quote.customerPhone ?? null,
-        address: quote.customerAddress ?? null,
-        notes: quote.notes ?? null,
-        subtotal: Number(totals.subtotal),
-        shipping: Number(totals.shippingTotal),
-        shipping_label: quote.shippingLabel ?? null,
-        shipping_method: serializeShippingMethodForDb(quote.shippingMethod),
-        shipping_options_json: quote.shippingOptions?.length ? quote.shippingOptions : null,
-        shipping_state: quote.shippingState ?? null,
-        shipping_zip: quote.shippingZip ?? null,
-        tax_rate: quote.taxRatePercent != null ? Number(quote.taxRatePercent / 100) : null,
-        tax_amount: Number(totals.taxTotal),
-        tax_label: quote.taxLabel ?? null,
-        tax_description: quote.taxDescription ?? null,
-        total: Number(totals.grandTotal),
-        items: quote.items.map((item) => ({
-          product_code: item.sku ?? item.sourceProductId ?? null,
-          description: item.name ?? null,
-          optional_description: item.description ?? null,
-          image_url: item.imageUrl || null,
-          qty: Number(item.qty),
-          unit_price: Number(item.unitPrice),
-          amount: Number(item.lineTotal),
-          options_json:
-            item.chosenOptions?.length || item.imageUrl
-              ? {
-                  ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
-                  ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
-                }
-              : null,
-        })),
-      };
-
-      const method = activeQuoteId ? "PUT" : "POST";
-      const url = activeQuoteId
-        ? `${apiBase}/api/quotes/${encodeURIComponent(activeQuoteId)}`
-        : `${apiBase}/api/quotes`;
-      console.log("[saveQuote] request:", { quoteId: activeQuoteId, method, url });
-
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -1162,7 +1167,8 @@ export default function QuoteBuilderPage() {
             offline?: boolean;
           })
         : await response.text();
-      console.log("[saveQuote] response:", { quoteId: activeQuoteId, method, url, response: parsedBody });
+
+      console.log("[saveQuote] response:", { method, status: response.status, body: parsedBody });
 
       if (response.ok && isJson && parsedBody && typeof parsedBody === "object") {
         const body = parsedBody as { offline?: boolean; persisted?: boolean; message?: string };
@@ -1186,20 +1192,92 @@ export default function QuoteBuilderPage() {
             : `Failed to save quote (${response.status})`,
         );
       }
+
       if (isJson && parsedBody && typeof parsedBody === "object" && "id" in parsedBody) {
         const nextId = String((parsedBody as { id?: string }).id ?? "").trim() || null;
         if (nextId) {
           setLoadedQuoteId(nextId);
-          setQuote((prev) => ({ ...prev, id: nextId }));
+          setOriginalLoadedQuoteNumber(payload.quote_number || null);
+          setQuote((prev) => ({
+            ...prev,
+            id: nextId,
+            quoteNumber: payload.quote_number,
+            version: options?.forceNewQuote ? 1 : prev.version,
+          }));
         }
       }
-      setSaveQuoteSuccess(`Quote ${quote.quoteNumber} saved.`);
+
+      setSaveQuoteSuccess(successMessage);
     } catch (error) {
-      console.error("Save quote failed:", error);
+      console.error("[saveQuote] failed:", error);
       setSaveQuoteError(error instanceof Error ? error.message : "Failed to save quote");
     } finally {
       setSaveQuoteLoading(false);
     }
+  };
+
+  const createNewQuote = async () => {
+    const quoteNum = normalizeQuoteNumber(quote.quoteNumber);
+    if (!quoteNum) {
+      setSaveQuoteError("Enter a quote number first.");
+      return;
+    }
+
+    setSaveQuoteLoading(true);
+    setSaveQuoteSuccess(null);
+    setSaveQuoteError(null);
+    try {
+      const exists = await quoteNumberExists(quoteNum);
+      if (exists) {
+        setSaveQuoteError(`Quote "${quoteNum}" already exists. Choose a different quote number.`);
+        return;
+      }
+    } catch (error) {
+      console.error("[createNewQuote] failed:", error);
+      setSaveQuoteError(error instanceof Error ? error.message : "Failed to create quote");
+      return;
+    } finally {
+      setSaveQuoteLoading(false);
+    }
+
+    await runSaveRequest(
+      "POST",
+      `${apiBase}/api/quotes`,
+      `New quote ${quoteNum} created.`,
+      { forceNewQuote: true },
+    );
+  };
+
+  const saveQuote = async () => {
+    const quoteNum = normalizeQuoteNumber(quote.quoteNumber);
+    if (!quoteNum) {
+      setSaveQuoteError("Enter a quote number first.");
+      return;
+    }
+
+    if (loadedQuoteId) {
+      const result = await Swal.fire({
+        title: "Save changes?",
+        text: `Save changes to quote "${quoteNum}"?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, save quote",
+        cancelButtonText: "Cancel",
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) return;
+
+      await runSaveRequest(
+        "PUT",
+        `${apiBase}/api/quotes/${encodeURIComponent(loadedQuoteId)}`,
+        `Quote ${quoteNum} saved.`,
+      );
+      return;
+    }
+
+    await runSaveRequest("POST", `${apiBase}/api/quotes`, `Quote ${quoteNum} saved.`, {
+      forceNewQuote: true,
+    });
   };
 
   useEffect(() => {
@@ -1308,7 +1386,7 @@ export default function QuoteBuilderPage() {
 
       const draft: Quote = {
         id: data.id,
-        quoteNumber: data.quoteNumber ?? "",
+        quoteNumber: readApiQuoteNumber(data),
         status: data.status === "final" ? "final" : "draft",
         version: asNumber(data.version) || 1,
         customerName: data.customerName ?? null,
@@ -1346,6 +1424,7 @@ export default function QuoteBuilderPage() {
       });
       setQuote({ ...draft, ...recalculated });
       setLoadedQuoteId(data.id);
+      setOriginalLoadedQuoteNumber(readApiQuoteNumber(data) || null);
       setLineItemOptions({});
       setSearchQuery("");
       setSearchResults([]);
@@ -1432,6 +1511,7 @@ export default function QuoteBuilderPage() {
                 clearQuoteDraft();
                 setLastCartPayload(null);
                 setLoadedQuoteId(null);
+                setOriginalLoadedQuoteNumber(null);
                 setQuote(createEmptyQuote());
               }}
             >
@@ -1510,6 +1590,12 @@ export default function QuoteBuilderPage() {
               value={quote.quoteNumber}
               onChange={(e) => setQuote((prev) => ({ ...prev, quoteNumber: e.target.value }))}
             />
+            {loadedQuoteId && originalLoadedQuoteNumber ? (
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Loaded quote: {originalLoadedQuoteNumber}. Change Quote # and click Create new quote to save a
+                copy; click Save Quote to update the loaded quote.
+              </div>
+            ) : null}
           </div>
           <div>
             <label>Date</label>
@@ -2226,8 +2312,16 @@ export default function QuoteBuilderPage() {
           {saveQuoteError ? <span style={{ color: "#b91c1c", fontWeight: 600 }}>{saveQuoteError}</span> : null}
           <button
             type="button"
+            className="btn"
+            onClick={() => void createNewQuote()}
+            disabled={saveQuoteLoading}
+          >
+            {saveQuoteLoading ? "Saving..." : "Create a new quote"}
+          </button>
+          <button
+            type="button"
             className="btn primary"
-            onClick={saveQuote}
+            onClick={() => void saveQuote()}
             disabled={saveQuoteLoading}
           >
             {saveQuoteLoading ? "Saving..." : "SAVE QUOTE"}

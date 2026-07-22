@@ -6,6 +6,7 @@ const volusion_1 = require("../services/volusion");
 const identifyUser_1 = require("../services/identifyUser");
 const scrapeStorefrontCart_1 = require("../services/scrapeStorefrontCart");
 const models_1 = require("../lib/models");
+const quoteNumberValidation_1 = require("../lib/quoteNumberValidation");
 const officePersistence_1 = require("../lib/officePersistence");
 const router = (0, express_1.Router)();
 const offlineListResponse = () => ({ data: [], offline: true });
@@ -294,9 +295,23 @@ const createQuote = async (req, res) => {
     try {
         const body = req.body;
         const items = Array.isArray(body.items) ? body.items : [];
-        console.log("POST /api/quotes payload:", body);
+        const quoteNumber = String(pickBodyValue(body, "quote_number", "quoteNumber") ?? "").trim();
+        console.log("[POST /api/quotes] insert request:", {
+            quoteNumber,
+            itemCount: items.length,
+        });
+        if (!quoteNumber) {
+            await tx.rollback();
+            return res.status(400).json({ error: "quote_number is required" });
+        }
+        const duplicate = await (0, quoteNumberValidation_1.findQuoteByNumber)(quoteNumber, { transaction: tx });
+        if (duplicate) {
+            await tx.rollback();
+            console.log("[POST /api/quotes] duplicate quote number rejected:", quoteNumber);
+            return res.status(409).json({ error: (0, quoteNumberValidation_1.duplicateQuoteNumberError)(quoteNumber) });
+        }
         const quote = await models_1.Quote.create({
-            quoteNumber: String(pickBodyValue(body, "quote_number", "quoteNumber") ?? ""),
+            quoteNumber,
             quoteDate: toStringOrNull(pickBodyValue(body, "quote_date", "quoteDate")),
             status: (toStringOrNull(body.status) ?? "draft"),
             version: Number(body.version ?? 1),
@@ -326,14 +341,23 @@ const createQuote = async (req, res) => {
         const created = await models_1.Quote.findByPk(quote.id, {
             include: [{ model: models_1.QuoteItem, as: "items" }],
         });
-        console.log("POST /api/quotes response:", created);
+        console.log("[POST /api/quotes] created:", {
+            id: created?.id,
+            quoteNumber: created?.quoteNumber,
+        });
         return res.status(201).json(created);
     }
     catch (error) {
         await tx.rollback();
-        console.error("POST /api/quotes failed:", error);
+        console.error("[POST /api/quotes] failed:", error);
         if (error instanceof sequelize_1.UniqueConstraintError) {
-            return res.status(409).json({ error: "quote_number already exists" });
+            const body = req.body;
+            const quoteNumber = String(pickBodyValue(body, "quote_number", "quoteNumber") ?? "").trim();
+            return res.status(409).json({
+                error: quoteNumber
+                    ? (0, quoteNumberValidation_1.duplicateQuoteNumberError)(quoteNumber)
+                    : "quote_number already exists",
+            });
         }
         const message = error instanceof Error ? error.message : "Failed to create quote";
         return res.status(500).json({ error: message });
@@ -359,17 +383,19 @@ router.put("/:id", async (req, res) => {
         const body = req.body;
         const incomingQuoteNumberRaw = pickBodyValue(body, "quote_number", "quoteNumber");
         const incomingQuoteNumber = incomingQuoteNumberRaw === undefined ? undefined : String(incomingQuoteNumberRaw).trim();
+        console.log("[PUT /api/quotes/:id] update request:", {
+            quoteId,
+            incomingQuoteNumber,
+        });
         if (incomingQuoteNumber !== undefined) {
-            const duplicate = await models_1.Quote.findOne({
-                where: {
-                    quoteNumber: incomingQuoteNumber,
-                    id: { [sequelize_1.Op.ne]: quote.id },
-                },
+            const duplicate = await (0, quoteNumberValidation_1.findQuoteByNumber)(incomingQuoteNumber, {
+                excludeQuoteId: quote.id,
                 transaction: tx,
             });
             if (duplicate) {
                 await tx.rollback();
-                return res.status(409).json({ error: "quote_number already exists" });
+                console.log("[PUT /api/quotes/:id] duplicate quote number rejected:", incomingQuoteNumber);
+                return res.status(409).json({ error: (0, quoteNumberValidation_1.duplicateQuoteNumberError)(incomingQuoteNumber) });
             }
         }
         const updates = {};
@@ -445,7 +471,13 @@ router.put("/:id", async (req, res) => {
     catch (error) {
         await tx.rollback();
         if (error instanceof sequelize_1.UniqueConstraintError) {
-            return res.status(409).json({ error: "quote_number already exists" });
+            const body = req.body;
+            const quoteNumber = String(pickBodyValue(body, "quote_number", "quoteNumber") ?? "").trim();
+            return res.status(409).json({
+                error: quoteNumber
+                    ? (0, quoteNumberValidation_1.duplicateQuoteNumberError)(quoteNumber)
+                    : "quote_number already exists",
+            });
         }
         const message = error instanceof Error ? error.message : "Failed to update quote";
         return res.status(500).json({ error: message });
