@@ -1,3 +1,5 @@
+require("../lib/playwrightSetup");
+
 import { chromium, Page } from "playwright";
 
 const TARGET_URL =

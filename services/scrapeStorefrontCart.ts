@@ -1,3 +1,5 @@
+require("../lib/playwrightSetup");
+
 import { setTimeout as delay } from "node:timers/promises";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";

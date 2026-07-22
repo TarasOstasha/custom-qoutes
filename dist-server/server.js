@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+require("./lib/playwrightSetup");
 let apiReady = false;
 async function initializeRoutes(app) {
     const { resolveDatabaseUrl } = require("./lib/resolveDatabaseUrl");

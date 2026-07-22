@@ -12,7 +12,7 @@
     "copy:standalone-assets": "node scripts/copy-standalone-assets.js",
     "build:prod": "npm run build && npm run copy:standalone-assets && npm run build:api",
     "start": "next start",
-    "api:dev": "ts-node server.ts",
+    "api:dev": "ts-node -r ./lib/playwrightSetup.js server.ts",
     "electron:start": "npm run build:prod && electron .",
     "electron:dist": "npm run build:prod && electron-builder --win nsis",
     "postinstall": "playwright install chromium",

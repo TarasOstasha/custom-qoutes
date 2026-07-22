@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.identifyVolusionUser = identifyVolusionUser;
+require("../lib/playwrightSetup");
 const playwright_1 = require("playwright");
 const TARGET_URL = "https://www.xyzdisplays.com/admin/TableViewer.asp?table=CartIDLog";
 async function isLoginPage(page) {

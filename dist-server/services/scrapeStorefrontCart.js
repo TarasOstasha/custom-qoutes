@@ -6,6 +6,7 @@ exports.openVisibleVolusionCartSession = openVisibleVolusionCartSession;
 exports.scrapeVolusionStorefrontCart = scrapeVolusionStorefrontCart;
 exports.clearVolusionStorefrontCart = clearVolusionStorefrontCart;
 exports.closeVolusionStorefrontCartSession = closeVolusionStorefrontCartSession;
+require("../lib/playwrightSetup");
 const promises_1 = require("node:timers/promises");
 const promises_2 = require("node:fs/promises");
 const node_path_1 = require("node:path");

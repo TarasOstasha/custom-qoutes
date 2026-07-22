@@ -12,14 +12,24 @@ const isDev = !app.isPackaged;
 const devRoot = path.resolve(__dirname, "..");
 const prodAppRoot = path.join(process.resourcesPath, "app");
 
-const playwrightBrowsersPath = isDev
-  ? path.join(
+function resolvePlaywrightBrowsersPath() {
+  const current = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim();
+
+  if (current && !current.includes("cursor-sandbox-cache")) {
+    return current;
+  }
+
+  if (isDev) {
+    return path.join(
       process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
       "ms-playwright",
-    )
-  : path.join(process.resourcesPath, "ms-playwright");
+    );
+  }
 
-process.env.PLAYWRIGHT_BROWSERS_PATH = playwrightBrowsersPath;
+  return path.join(process.resourcesPath, "ms-playwright");
+}
+
+process.env.PLAYWRIGHT_BROWSERS_PATH = resolvePlaywrightBrowsersPath();
 
 function loadEnvironment() {
   const dotenvPath = isDev

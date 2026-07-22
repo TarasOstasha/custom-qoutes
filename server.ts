@@ -1,3 +1,5 @@
+require("./lib/playwrightSetup");
+
 import type { Express, Request, Response } from "express";
 import type { DataTypes as DataTypesType } from "sequelize";
 
