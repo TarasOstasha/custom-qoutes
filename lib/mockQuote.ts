@@ -11,6 +11,8 @@ export type QuoteItem = {
   description?: string | null;
   /** Cart/product options the user checked in the builder; included on PDF export. */
   chosenOptions?: string[] | null;
+  /** Stable Volusion cart row identity — keeps duplicate SKUs as separate lines. */
+  importLineId?: string | null;
   qty: number;
   unitPrice: number;
   discountType: "none" | "amount" | "percent";

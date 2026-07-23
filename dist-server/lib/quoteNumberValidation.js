@@ -15,6 +15,6 @@ async function findQuoteByNumber(quoteNumber, options) {
             quoteNumber: normalized,
             ...(options?.excludeQuoteId ? { id: { [sequelize_1.Op.ne]: options.excludeQuoteId } } : {}),
         },
-        transaction: options?.transaction,
+        ...(options?.transaction ? { transaction: options.transaction } : {}),
     });
 }

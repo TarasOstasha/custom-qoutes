@@ -107,6 +107,9 @@ async function extractCartPayloadInBrowser() {
         }
         return 1;
     }
+    function isImportableCartRow(_tr, unitPrice, lineTotal) {
+        return unitPrice > 0 || lineTotal > 0;
+    }
     function columnOffset(thCount, tdCount) {
         if (tdCount > thCount)
             return tdCount - thCount;
@@ -146,12 +149,84 @@ async function extractCartPayloadInBrowser() {
         const path = openWindowMatch?.[1] ?? directPathMatch?.[1] ?? "";
         return path.trim();
     }
-    function isLikelyProductRow(tr) {
-        if (tr.querySelector('a[href*="ProductCode"], a[href*="productcode"]'))
-            return true;
-        if (tr.querySelector('input[id^="Quantity"], input[name^="Quantity"]'))
-            return true;
-        if (tr.querySelector(".cart-item-name"))
+    function cartLineIdFromRow(tr, popupPath, rowIndex, productCode, unitPrice, lineTotal) {
+        if (popupPath) {
+            try {
+                const popupUrl = new URL(popupPath, window.location.href);
+                for (const key of ["CartItemID", "CartItemId", "cartitemid", "ID", "Id", "ItemID", "itemid"]) {
+                    const value = popupUrl.searchParams.get(key)?.trim();
+                    if (value) {
+                        const priceKey = Math.round(unitPrice * 100);
+                        return `volusion_${value}_p${priceKey}`;
+                    }
+                }
+            }
+            catch {
+                /* fall through */
+            }
+        }
+        const hiddenSelectors = [
+            'input[name*="CartItem"]',
+            'input[id*="CartItem"]',
+            'input[name*="cartitem"]',
+            'input[id*="cartitem"]',
+        ];
+        for (const selector of hiddenSelectors) {
+            const input = tr.querySelector(selector);
+            const value = input?.value?.trim();
+            if (value) {
+                const priceKey = Math.round(unitPrice * 100);
+                return `volusion_${value}_p${priceKey}`;
+            }
+        }
+        const qtyInput = tr.querySelector('input[id^="Quantity"], input[name^="Quantity"], input[id*="Quantity"], input[name*="Quantity"]');
+        if (qtyInput) {
+            const idName = `${qtyInput.id ?? ""} ${qtyInput.name ?? ""}`;
+            const suffixMatch = idName.match(/(?:Quantity|quantity)[_\-]?(\d+)/i);
+            if (suffixMatch?.[1])
+                return `volusion_qty_${suffixMatch[1]}`;
+        }
+        const code = (productCode || "item").toLowerCase();
+        const pathKey = popupPath
+            ? popupPath.replace(/\W+/g, "_").slice(0, 80)
+            : `row${rowIndex}`;
+        return `import_${code}_r${rowIndex}_p${Math.round(unitPrice * 100)}_t${Math.round(lineTotal * 100)}_${pathKey}`;
+    }
+    function findOptionsAnchorInRow(tr) {
+        const directSelectors = [
+            'a[href*="Help_CartItemDetails.asp"]',
+            'a[onclick*="Help_CartItemDetails.asp"]',
+            'a[title*="View list of options"]',
+        ];
+        for (const selector of directSelectors) {
+            const el = tr.querySelector(selector);
+            if (el)
+                return el;
+        }
+        const openWindowLinks = Array.from(tr.querySelectorAll('a[href*="OpenNewWindow"], a[onclick*="OpenNewWindow"]'));
+        for (const el of openWindowLinks) {
+            const raw = `${el.getAttribute("href") ?? ""} ${el.getAttribute("onclick") ?? ""}`;
+            if (/Help_CartItemDetails\.asp/i.test(raw))
+                return el;
+        }
+        return null;
+    }
+    /** True when this row starts a new priced cart line (not an options sub-row). */
+    function isNextCartLineRow(tr) {
+        const tds = tr.querySelectorAll("td");
+        for (let i = 0; i < tds.length; i += 1) {
+            const td = tds.item(i);
+            if (!td)
+                continue;
+            const txt = td.textContent ?? "";
+            if (/\$\s*[\d,]+/.test(txt) && !td.querySelector("input")) {
+                const value = parseMoney(txt);
+                if (value > 0)
+                    return true;
+            }
+        }
+        const qtyInput = tr.querySelector('input[id^="Quantity"], input[name^="Quantity"]');
+        if (qtyInput && (qtyInput.type ?? "text").toLowerCase() !== "hidden")
             return true;
         return false;
     }
@@ -159,18 +234,19 @@ async function extractCartPayloadInBrowser() {
         const current = rows[rowIndex];
         if (!current)
             return null;
-        const inCurrent = current.querySelector('a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]');
+        const inCurrent = findOptionsAnchorInRow(current);
         if (inCurrent)
             return inCurrent;
         for (let i = rowIndex + 1; i < Math.min(rows.length, rowIndex + 5); i += 1) {
             const next = rows[i];
             if (!next)
                 break;
-            if (isLikelyProductRow(next))
-                break;
-            const candidate = next.querySelector('a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]');
+            const candidate = findOptionsAnchorInRow(next);
             if (candidate)
                 return candidate;
+            // Option sub-rows repeat product name/links — only stop at the next priced cart line.
+            if (isNextCartLineRow(next))
+                break;
         }
         return null;
     }
@@ -315,7 +391,7 @@ async function extractCartPayloadInBrowser() {
             bodyRows = table.querySelectorAll("tr");
         }
         const rowList = Array.from(bodyRows).filter((tr) => !tr.closest("thead"));
-        const optionsByPath = new Map();
+        const optionsByLineId = new Map();
         for (let rowIndex = 0; rowIndex < rowList.length; rowIndex += 1) {
             const tr = rowList[rowIndex];
             if (!tr)
@@ -370,21 +446,29 @@ async function extractCartPayloadInBrowser() {
             else if (unitPrice > 0 && lineTotal === 0 && qty > 0) {
                 lineTotal = round2(unitPrice * qty);
             }
+            if (!isImportableCartRow(tr, unitPrice, lineTotal)) {
+                continue;
+            }
             const imageUrl = pickProductImageSrc(tr);
             const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
             const optionsAnchor = findOptionsAnchorNearRow(rowList, rowIndex);
             const popupPath = popupDetailsPathFromAnchor(optionsAnchor);
+            const cartLineId = cartLineIdFromRow(tr, popupPath, rowIndex, productCode, unitPrice, lineTotal);
             let options = [];
             if (popupPath) {
-                if (optionsByPath.has(popupPath)) {
-                    options = optionsByPath.get(popupPath) ?? [];
+                const optionsCacheKey = `${cartLineId}|${popupPath}`;
+                if (optionsByLineId.has(optionsCacheKey)) {
+                    options = optionsByLineId.get(optionsCacheKey) ?? [];
                 }
                 else {
                     options = await scrapeOptionsFromPopupPath(popupPath);
-                    optionsByPath.set(popupPath, options);
+                    if (options.length) {
+                        optionsByLineId.set(optionsCacheKey, options);
+                    }
                 }
             }
             cartItems.push({
+                cartLineId,
                 productCode: productCode || name,
                 name: name || productCode,
                 qty,
@@ -397,11 +481,14 @@ async function extractCartPayloadInBrowser() {
     }
     if (!cartItems.length) {
         const seen = new Set();
+        let fallbackRowIndex = 0;
         document.querySelectorAll('input[id^="Quantity"], input[name^="Quantity"]').forEach((inp) => {
             const tr = inp.closest("tr");
             if (!tr || tr.closest("thead") || seen.has(tr))
                 return;
             seen.add(tr);
+            const rowIndex = fallbackRowIndex;
+            fallbackRowIndex += 1;
             const nameEl = tr.querySelector(".cart-item-name") ??
                 tr.querySelector('td a[href*="Product"]') ??
                 tr.querySelector('td a[href*=".asp"]');
@@ -436,7 +523,9 @@ async function extractCartPayloadInBrowser() {
             }
             const imageUrl = pickProductImageSrc(tr);
             const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
+            const cartLineId = cartLineIdFromRow(tr, "", rowIndex, productCode, unitPrice, lineTotal);
             cartItems.push({
+                cartLineId,
                 productCode: productCode || name,
                 name: name || productCode,
                 qty,

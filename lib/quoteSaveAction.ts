@@ -57,6 +57,7 @@ export function mapQuoteItemsForCreate(
     unitPrice: number;
     lineTotal: number;
     chosenOptions?: string[] | null;
+    importLineId?: string | null;
   }>,
 ) {
   return items.map((item) => ({
@@ -68,10 +69,11 @@ export function mapQuoteItemsForCreate(
     unit_price: Number(item.unitPrice),
     amount: Number(item.lineTotal),
     options_json:
-      item.chosenOptions?.length || item.imageUrl
+      item.chosenOptions?.length || item.imageUrl || item.importLineId
         ? {
             ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
             ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+            ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
           }
         : null,
   }));

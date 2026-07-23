@@ -16,6 +16,6 @@ export async function findQuoteByNumber(
       quoteNumber: normalized,
       ...(options?.excludeQuoteId ? { id: { [Op.ne]: options.excludeQuoteId } } : {}),
     },
-    transaction: options?.transaction,
+    ...(options?.transaction ? { transaction: options.transaction } : {}),
   });
 }

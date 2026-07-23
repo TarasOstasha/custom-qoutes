@@ -4,6 +4,8 @@ import { reconcileShippingSelectionWithTotal } from "./shippingMethod";
 const DEFAULT_CART_ID = "07387C5E1E344F7DB151AE80E9894EE7";
 
 export type CartItemRow = {
+  /** Volusion cart row id when present in DOM; otherwise set during scrape fallback. */
+  cartLineId?: string;
   productCode: string;
   name: string;
   qty: number;
@@ -138,6 +140,10 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     return 1;
   }
 
+  function isImportableCartRow(_tr: HTMLTableRowElement, unitPrice: number, lineTotal: number): boolean {
+    return unitPrice > 0 || lineTotal > 0;
+  }
+
   function columnOffset(thCount: number, tdCount: number): number {
     if (tdCount > thCount) return tdCount - thCount;
     return 0;
@@ -178,10 +184,98 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     return path.trim();
   }
 
-  function isLikelyProductRow(tr: HTMLTableRowElement): boolean {
-    if (tr.querySelector('a[href*="ProductCode"], a[href*="productcode"]')) return true;
-    if (tr.querySelector('input[id^="Quantity"], input[name^="Quantity"]')) return true;
-    if (tr.querySelector(".cart-item-name")) return true;
+  function cartLineIdFromRow(
+    tr: HTMLTableRowElement,
+    popupPath: string,
+    rowIndex: number,
+    productCode: string,
+    unitPrice: number,
+    lineTotal: number,
+  ): string {
+    if (popupPath) {
+      try {
+        const popupUrl = new URL(popupPath, window.location.href);
+        for (const key of ["CartItemID", "CartItemId", "cartitemid", "ID", "Id", "ItemID", "itemid"]) {
+          const value = popupUrl.searchParams.get(key)?.trim();
+          if (value) {
+            const priceKey = Math.round(unitPrice * 100);
+            return `volusion_${value}_p${priceKey}`;
+          }
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
+    const hiddenSelectors = [
+      'input[name*="CartItem"]',
+      'input[id*="CartItem"]',
+      'input[name*="cartitem"]',
+      'input[id*="cartitem"]',
+    ];
+    for (const selector of hiddenSelectors) {
+      const input = tr.querySelector(selector) as HTMLInputElement | null;
+      const value = input?.value?.trim();
+      if (value) {
+        const priceKey = Math.round(unitPrice * 100);
+        return `volusion_${value}_p${priceKey}`;
+      }
+    }
+
+    const qtyInput = tr.querySelector(
+      'input[id^="Quantity"], input[name^="Quantity"], input[id*="Quantity"], input[name*="Quantity"]',
+    ) as HTMLInputElement | null;
+    if (qtyInput) {
+      const idName = `${qtyInput.id ?? ""} ${qtyInput.name ?? ""}`;
+      const suffixMatch = idName.match(/(?:Quantity|quantity)[_\-]?(\d+)/i);
+      if (suffixMatch?.[1]) return `volusion_qty_${suffixMatch[1]}`;
+    }
+
+    const code = (productCode || "item").toLowerCase();
+    const pathKey = popupPath
+      ? popupPath.replace(/\W+/g, "_").slice(0, 80)
+      : `row${rowIndex}`;
+    return `import_${code}_r${rowIndex}_p${Math.round(unitPrice * 100)}_t${Math.round(lineTotal * 100)}_${pathKey}`;
+  }
+
+  function findOptionsAnchorInRow(tr: HTMLTableRowElement): HTMLAnchorElement | null {
+    const directSelectors = [
+      'a[href*="Help_CartItemDetails.asp"]',
+      'a[onclick*="Help_CartItemDetails.asp"]',
+      'a[title*="View list of options"]',
+    ];
+    for (const selector of directSelectors) {
+      const el = tr.querySelector(selector) as HTMLAnchorElement | null;
+      if (el) return el;
+    }
+
+    const openWindowLinks = Array.from(
+      tr.querySelectorAll('a[href*="OpenNewWindow"], a[onclick*="OpenNewWindow"]'),
+    ) as HTMLAnchorElement[];
+    for (const el of openWindowLinks) {
+      const raw = `${el.getAttribute("href") ?? ""} ${el.getAttribute("onclick") ?? ""}`;
+      if (/Help_CartItemDetails\.asp/i.test(raw)) return el;
+    }
+
+    return null;
+  }
+
+  /** True when this row starts a new priced cart line (not an options sub-row). */
+  function isNextCartLineRow(tr: HTMLTableRowElement): boolean {
+    const tds = tr.querySelectorAll("td");
+    for (let i = 0; i < tds.length; i += 1) {
+      const td = tds.item(i);
+      if (!td) continue;
+      const txt = td.textContent ?? "";
+      if (/\$\s*[\d,]+/.test(txt) && !td.querySelector("input")) {
+        const value = parseMoney(txt);
+        if (value > 0) return true;
+      }
+    }
+    const qtyInput = tr.querySelector(
+      'input[id^="Quantity"], input[name^="Quantity"]',
+    ) as HTMLInputElement | null;
+    if (qtyInput && (qtyInput.type ?? "text").toLowerCase() !== "hidden") return true;
     return false;
   }
 
@@ -189,19 +283,16 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     const current = rows[rowIndex];
     if (!current) return null;
 
-    const inCurrent = current.querySelector(
-      'a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]'
-    ) as HTMLAnchorElement | null;
+    const inCurrent = findOptionsAnchorInRow(current);
     if (inCurrent) return inCurrent;
 
     for (let i = rowIndex + 1; i < Math.min(rows.length, rowIndex + 5); i += 1) {
       const next = rows[i];
       if (!next) break;
-      if (isLikelyProductRow(next)) break;
-      const candidate = next.querySelector(
-        'a[href*="Help_CartItemDetails.asp"], a[href*="OpenNewWindow"], a[onclick*="Help_CartItemDetails.asp"], a[title*="View list of options"]'
-      ) as HTMLAnchorElement | null;
+      const candidate = findOptionsAnchorInRow(next);
       if (candidate) return candidate;
+      // Option sub-rows repeat product name/links — only stop at the next priced cart line.
+      if (isNextCartLineRow(next)) break;
     }
     return null;
   }
@@ -347,7 +438,7 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       bodyRows = table.querySelectorAll("tr");
     }
     const rowList = Array.from(bodyRows).filter((tr) => !tr.closest("thead")) as HTMLTableRowElement[];
-    const optionsByPath = new Map<string, string[]>();
+    const optionsByLineId = new Map<string, string[]>();
 
     for (let rowIndex = 0; rowIndex < rowList.length; rowIndex += 1) {
       const tr = rowList[rowIndex];
@@ -409,22 +500,38 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
         lineTotal = round2(unitPrice * qty);
       }
 
+      if (!isImportableCartRow(tr as HTMLTableRowElement, unitPrice, lineTotal)) {
+        continue;
+      }
+
       const imageUrl = pickProductImageSrc(tr);
       const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
 
       const optionsAnchor = findOptionsAnchorNearRow(rowList, rowIndex);
       const popupPath = popupDetailsPathFromAnchor(optionsAnchor);
+      const cartLineId = cartLineIdFromRow(
+        tr as HTMLTableRowElement,
+        popupPath,
+        rowIndex,
+        productCode,
+        unitPrice,
+        lineTotal,
+      );
       let options: string[] = [];
       if (popupPath) {
-        if (optionsByPath.has(popupPath)) {
-          options = optionsByPath.get(popupPath) ?? [];
+        const optionsCacheKey = `${cartLineId}|${popupPath}`;
+        if (optionsByLineId.has(optionsCacheKey)) {
+          options = optionsByLineId.get(optionsCacheKey) ?? [];
         } else {
           options = await scrapeOptionsFromPopupPath(popupPath);
-          optionsByPath.set(popupPath, options);
+          if (options.length) {
+            optionsByLineId.set(optionsCacheKey, options);
+          }
         }
       }
 
       cartItems.push({
+        cartLineId,
         productCode: productCode || name,
         name: name || productCode,
         qty,
@@ -438,10 +545,13 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
 
   if (!cartItems.length) {
     const seen = new Set<HTMLTableRowElement>();
+    let fallbackRowIndex = 0;
     document.querySelectorAll('input[id^="Quantity"], input[name^="Quantity"]').forEach((inp) => {
       const tr = inp.closest("tr");
       if (!tr || tr.closest("thead") || seen.has(tr as HTMLTableRowElement)) return;
       seen.add(tr as HTMLTableRowElement);
+      const rowIndex = fallbackRowIndex;
+      fallbackRowIndex += 1;
       const nameEl =
         tr.querySelector(".cart-item-name") ??
         tr.querySelector('td a[href*="Product"]') ??
@@ -474,7 +584,16 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       }
       const imageUrl = pickProductImageSrc(tr);
       const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
+      const cartLineId = cartLineIdFromRow(
+        tr as HTMLTableRowElement,
+        "",
+        rowIndex,
+        productCode,
+        unitPrice,
+        lineTotal,
+      );
       cartItems.push({
+        cartLineId,
         productCode: productCode || name,
         name: name || productCode,
         qty,

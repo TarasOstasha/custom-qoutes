@@ -41,10 +41,11 @@ function mapQuoteItemsForCreate(items) {
         qty: Number(item.qty),
         unit_price: Number(item.unitPrice),
         amount: Number(item.lineTotal),
-        options_json: item.chosenOptions?.length || item.imageUrl
+        options_json: item.chosenOptions?.length || item.imageUrl || item.importLineId
             ? {
                 ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
                 ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+                ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
             }
             : null,
     }));

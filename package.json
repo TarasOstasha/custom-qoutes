@@ -16,7 +16,7 @@
     "electron:start": "npm run build:prod && electron .",
     "electron:dist": "npm run build:prod && electron-builder --win nsis",
     "postinstall": "playwright install chromium",
-    "test": "npm run build:api && node --test lib/quoteSaveAction.test.js"
+    "test": "npm run build:api && node --test lib/quoteSaveAction.test.js lib/cartImport.test.js"
   },
   "keywords": [],
   "author": "",

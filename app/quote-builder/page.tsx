@@ -43,6 +43,7 @@ import {
   saveQuoteDraft,
 } from "../../lib/quotePreviewStorage";
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
+import { collectOptionsForCartLine, mapCartRowsToQuoteItems } from "../../lib/cartImport";
 import AddPopupWindow from "../../components/AddPopupWindow";
 
 function currency(n: number): string {
@@ -105,8 +106,8 @@ type ApiQuoteItem = {
   unitPrice: number | string | null;
   unit_price?: number | string | null;
   amount: number | string | null;
-  optionsJson?: { chosen_options?: string[]; image_url?: string } | null;
-  options_json?: { chosen_options?: string[]; image_url?: string } | null;
+  optionsJson?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
+  options_json?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -517,30 +518,12 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  const normalizeForMatch = (value: string): string => value.trim().toLowerCase();
-
   const collectAvailableOptionsForItem = (item: QuoteItem): string[] => {
     const payloadItems = lastCartPayload?.cartItems ?? [];
-    if (!payloadItems.length) return [];
-    const sku = normalizeForMatch(item.sku ?? "");
-    const name = normalizeForMatch(item.name ?? "");
-
-    const matches = payloadItems.filter((row) => {
-      const rowCode = normalizeForMatch(row.productCode ?? "");
-      const rowName = normalizeForMatch(row.name ?? "");
-      const skuMatch = Boolean(sku) && rowCode === sku;
-      const nameMatch = Boolean(name) && rowName === name;
-      return skuMatch || nameMatch;
-    });
-
-    const unique = new Set<string>();
-    matches.forEach((row) => {
-      (row.options ?? []).forEach((opt) => {
-        const normalized = opt.trim();
-        if (normalized) unique.add(normalized);
-      });
-    });
-    return Array.from(unique);
+    if (!payloadItems.length) {
+      return item.chosenOptions?.length ? [...item.chosenOptions] : [];
+    }
+    return collectOptionsForCartLine(item, payloadItems);
   };
 
   const getLineOptions = (item: QuoteItem) => {
@@ -550,7 +533,7 @@ export default function QuoteBuilderPage() {
         loading: true,
         expanded: true,
         options: prev[item.id]?.options ?? [],
-        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
+        selected: prev[item.id]?.selected ?? [],
         error: null,
       },
     }));
@@ -562,7 +545,7 @@ export default function QuoteBuilderPage() {
         loading: false,
         expanded: true,
         options,
-        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
+        selected: prev[item.id]?.selected ?? [],
         error: options.length ? null : "No options found for this line item in the last cart scrape.",
       },
     }));
@@ -764,74 +747,12 @@ export default function QuoteBuilderPage() {
   const addDiscountLine = () => appendCustomLine("discount");
 
   const appendScrapedCartPayload = (payload: CartPayload) => {
-    const cartItems = payload.cartItems;
     const now = new Date().toISOString();
-
-    const normalized = new Map<
-      string,
-      { productCode: string; name: string; qty: number; unitPrice: number; lineTotal: number; imageUrl?: string }
-    >();
-    for (const row of cartItems) {
-      const productCode = (row.productCode ?? "").trim();
-      const name = (row.name ?? "").trim();
-      if (!productCode && !name) continue;
-      if (/^empty my entire cart$/i.test(name)) continue;
-      const key = `${productCode.toLowerCase()}|${name.toLowerCase()}`;
-      const existing = normalized.get(key);
-      if (!existing) {
-        normalized.set(key, row);
-        continue;
-      }
-
-      // Keep the richer/priced row when duplicate lines exist in scraped markup.
-      const existingScore = (existing.lineTotal > 0 ? 2 : 0) + (existing.unitPrice > 0 ? 1 : 0);
-      const nextScore = (row.lineTotal > 0 ? 2 : 0) + (row.unitPrice > 0 ? 1 : 0);
-      if (nextScore > existingScore) {
-        normalized.set(key, row);
-      } else if (nextScore === existingScore) {
-        normalized.set(key, {
-          ...existing,
-          qty: Math.max(existing.qty, row.qty),
-          lineTotal: Math.max(existing.lineTotal, row.lineTotal),
-          unitPrice: Math.max(existing.unitPrice, row.unitPrice),
-          ...((existing.imageUrl || row.imageUrl)
-            ? { imageUrl: existing.imageUrl || row.imageUrl }
-            : {}),
-        });
-      }
-    }
-    const dedupedRows = Array.from(normalized.values());
-
-    const mappedItems = dedupedRows.map((row, index) => {
-      const qty = Number.isFinite(row.qty) && row.qty > 0 ? row.qty : 1;
-      const unitPrice =
-        Number.isFinite(row.unitPrice) && row.unitPrice > 0
-          ? row.unitPrice
-          : qty > 0 && Number.isFinite(row.lineTotal)
-            ? round2(row.lineTotal / qty)
-            : 0;
-      const lineSubtotal = round2(unitPrice * qty);
-
-      return {
-        id: `qi_scrape_${Date.now()}_${index}`,
-        quoteId: quote.id,
-        lineType: "product",
-        sourceProductId: row.productCode || null,
-        sku: row.productCode || null,
-        imageUrl: row.imageUrl ?? null,
-        name: row.name || row.productCode || "Cart Item",
-        description: null,
-        qty,
-        unitPrice,
-        discountType: "none",
-        discountValue: 0,
-        sortOrder: quote.items.length + index + 1,
-        lineSubtotal,
-        lineDiscountTotal: 0,
-        lineTotal: lineSubtotal,
-        createdAt: now,
-        updatedAt: now,
-      } as QuoteItem;
+    const mappedItems = mapCartRowsToQuoteItems({
+      cartItems: payload.cartItems,
+      quoteId: quote.id,
+      startSortOrder: quote.items.length,
+      now,
     });
 
     const taxDescription = payload.taxDescription?.trim() || null;
@@ -1364,6 +1285,7 @@ export default function QuoteBuilderPage() {
           imageUrl: imageFromDb ?? imageFromOptions,
           name: item.description ?? productCode ?? "Line Item",
           description: item.optionalDescription ?? item.optional_description ?? null,
+          importLineId: options?.import_line_id ?? null,
           chosenOptions: options?.chosen_options ?? null,
           qty,
           unitPrice,
