@@ -278,16 +278,24 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   const galleryY = Math.max(headerBottom + 12, yTo + 8);
   const galleryW = pageWidth - 2 * margin;
 
+  const galleryUrls = quote.items
+    .map((i) => normalizeProductImageUrl(i.imageUrl) ?? i.imageUrl ?? "")
+    .filter(Boolean);
+
+  const pad = 10;
+  const gap = 10;
   const imgH = 120;
-  const galleryH = imgH + 28; // 14 top + 14 bottom padding
+  const rowGap = 8;
+  const perRow = 4;
+  const slotW = (galleryW - 2 * pad - gap * (perRow - 1)) / perRow;
+  const imgW = Math.min(128, slotW);
+  const numRows =
+    galleryUrls.length > 0 ? Math.ceil(galleryUrls.length / perRow) : 0;
+  const galleryH =
+    numRows > 0 ? numRows * imgH + (numRows - 1) * rowGap + 28 : imgH + 28;
 
   doc.setDrawColor(209, 213, 219);
   doc.rect(galleryX, galleryY, galleryW, galleryH);
-
-  const galleryUrls = quote.items
-    .map((i) => normalizeProductImageUrl(i.imageUrl) ?? i.imageUrl ?? "")
-    .filter(Boolean)
-    .slice(0, 4);
 
   if (galleryUrls.length > 0) {
     const imageData = await Promise.all(
@@ -295,15 +303,11 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     );
     const loaded = imageData.filter((d): d is string => Boolean(d));
     if (loaded.length > 0) {
-      const pad = 10;
-      const gap = 10;
-      const slotW =
-        (galleryW - 2 * pad - gap * (loaded.length - 1)) / loaded.length;
-      const imgW = Math.min(128, slotW);
-
       loaded.forEach((dataUrl, i) => {
-        const x = galleryX + pad + i * (slotW + gap) + (slotW - imgW) / 2;
-        const y = galleryY + (galleryH - imgH) / 2;
+        const rowIndex = Math.floor(i / perRow);
+        const colIndex = i % perRow;
+        const x = galleryX + pad + colIndex * (slotW + gap);
+        const y = galleryY + 14 + rowIndex * (imgH + rowGap);
         const format = /^data:image\/jpe?g/i.test(dataUrl) ? "JPEG" : "PNG";
         doc.addImage(dataUrl, format, x, y, imgW, imgH, undefined, "FAST");
       });

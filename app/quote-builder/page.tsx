@@ -2232,14 +2232,16 @@ export default function QuoteBuilderPage() {
         <div className="section" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
           {saveQuoteSuccess ? <span style={{ color: "#166534", fontWeight: 600 }}>{saveQuoteSuccess}</span> : null}
           {saveQuoteError ? <span style={{ color: "#b91c1c", fontWeight: 600 }}>{saveQuoteError}</span> : null}
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void createNewQuote()}
-            disabled={saveQuoteLoading}
-          >
-            {saveQuoteLoading ? "Saving..." : "Create a new quote"}
-          </button>
+          {loadedQuoteId ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void createNewQuote()}
+              disabled={saveQuoteLoading}
+            >
+              {saveQuoteLoading ? "Saving..." : "Create a new quote"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn primary"
