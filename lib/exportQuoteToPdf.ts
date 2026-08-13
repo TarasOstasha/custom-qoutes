@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { apiBase } from "./apiBase";
+import { getApiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -115,7 +115,7 @@ async function loadImageDataUrl(src: string): Promise<string | null> {
   } catch {
     try {
       const proxied = await fetch(
-        `${apiBase}/quotes/image-proxy?url=${encodeURIComponent(src)}`,
+        `${getApiBase()}/quotes/image-proxy?url=${encodeURIComponent(src)}`,
       );
       if (!proxied.ok) return null;
       const data = (await proxied.json()) as { dataUrl?: string };

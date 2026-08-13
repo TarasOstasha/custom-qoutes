@@ -112,7 +112,7 @@ async function loadImageDataUrl(src) {
     }
     catch {
         try {
-            const proxied = await fetch(`${apiBase_1.apiBase}/quotes/image-proxy?url=${encodeURIComponent(src)}`);
+            const proxied = await fetch(`${(0, apiBase_1.getApiBase)()}/quotes/image-proxy?url=${encodeURIComponent(src)}`);
             if (!proxied.ok)
                 return null;
             const data = (await proxied.json());

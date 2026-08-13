@@ -96,7 +96,7 @@ async function bootstrap(): Promise<void> {
   const express = require("express") as typeof import("express");
   const cors = require("cors") as typeof import("cors");
   const app = express();
-  const port = Number(process.env.PORT ?? 5000);
+  const port = Number(process.env.API_PORT ?? process.env.PORT ?? 5100);
 
   app.use(cors({ origin: "*" }));
   app.use(express.json());
@@ -118,11 +118,12 @@ async function bootstrap(): Promise<void> {
     res.json({ ok: true, persistenceAvailable: available });
   });
 
-  await new Promise<void>((resolve) => {
-    app.listen(port, () => {
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(port, () => {
       console.log(`Quote API running on http://localhost:${port}`);
       resolve();
     });
+    server.on("error", reject);
   });
 
   void initializeRoutes(app).catch((error: unknown) => {

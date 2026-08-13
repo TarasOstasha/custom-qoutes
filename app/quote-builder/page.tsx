@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
-import { apiBase } from "../../lib/apiBase";
+import { getApiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
@@ -233,7 +233,7 @@ export default function QuoteBuilderPage() {
     const loadPersistenceStatus = async (force = false) => {
       try {
         const query = force ? "?force=1" : "";
-        const response = await fetch(`${apiBase}/health${query}`);
+        const response = await fetch(`${getApiBase()}/health${query}`);
         if (!response.ok) return null;
         const data = (await response.json()) as { persistenceAvailable?: boolean };
         const available = Boolean(data.persistenceAvailable);
@@ -276,7 +276,7 @@ export default function QuoteBuilderPage() {
   const retryDatabaseConnection = async () => {
     setPersistenceRetryLoading(true);
     try {
-      const response = await fetch(`${apiBase}/health?force=1`);
+      const response = await fetch(`${getApiBase()}/health?force=1`);
       if (!response.ok) {
         setPersistenceAvailable(false);
         return;
@@ -678,7 +678,7 @@ export default function QuoteBuilderPage() {
     try {
       const formData = new FormData();
       formData.append("image", file);
-      const response = await fetch(`${apiBase}/api/upload-image`, {
+      const response = await fetch(`${getApiBase()}/api/upload-image`, {
         method: "POST",
         body: formData,
       });
@@ -825,7 +825,7 @@ export default function QuoteBuilderPage() {
     setAddVolusionLoading(true);
     try {
       const codes = inputCodes.join(",");
-      const response = await fetch(`${apiBase}/quotes/products?codes=${encodeURIComponent(codes)}`);
+      const response = await fetch(`${getApiBase()}/quotes/products?codes=${encodeURIComponent(codes)}`);
       const data = (await response.json()) as { items?: QuoteItem[]; error?: string };
 
       if (!response.ok) {
@@ -886,7 +886,7 @@ export default function QuoteBuilderPage() {
   const openLiveCartSession = async () => {
     setOpenCartSessionLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/cart/open-session`, {
+      const response = await fetch(`${getApiBase()}/api/cart/open-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -905,7 +905,7 @@ export default function QuoteBuilderPage() {
   const openLiveCartPage = async () => {
     setOpenLiveCartLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/cart/open-cart`, {
+      const response = await fetch(`${getApiBase()}/api/cart/open-cart`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -933,7 +933,7 @@ export default function QuoteBuilderPage() {
     setClearCartMessage(null);
     setClearCartError(null);
     try {
-      const response = await fetch(`${apiBase}/quotes/clear-cart`, {
+      const response = await fetch(`${getApiBase()}/quotes/clear-cart`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -964,7 +964,7 @@ export default function QuoteBuilderPage() {
   const copyCartViaServer = async () => {
     setScrapeCartServerLoading(true);
     try {
-      const response = await fetch(`${apiBase}/quotes/scrape-cart`, {
+      const response = await fetch(`${getApiBase()}/quotes/scrape-cart`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -993,7 +993,7 @@ export default function QuoteBuilderPage() {
     setIdentifyLoading(true);
     setIdentifiedEmail(null);
     try {
-      const response = await fetch(`${apiBase}/quotes/identify-user`, {
+      const response = await fetch(`${getApiBase()}/quotes/identify-user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cartId }),
@@ -1010,7 +1010,7 @@ export default function QuoteBuilderPage() {
   };
 
   const quoteNumberExists = async (quoteNum: string): Promise<boolean> => {
-    const response = await fetch(`${apiBase}/api/quotes/search?q=${encodeURIComponent(quoteNum)}`);
+    const response = await fetch(`${getApiBase()}/api/quotes/search?q=${encodeURIComponent(quoteNum)}`);
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const isJson = contentType.includes("application/json");
     const parsedBody = isJson
@@ -1163,7 +1163,7 @@ export default function QuoteBuilderPage() {
 
     await runSaveRequest(
       "POST",
-      `${apiBase}/api/quotes`,
+      `${getApiBase()}/api/quotes`,
       `New quote ${quoteNum} created.`,
       { forceNewQuote: true },
     );
@@ -1190,13 +1190,13 @@ export default function QuoteBuilderPage() {
 
       await runSaveRequest(
         "PUT",
-        `${apiBase}/api/quotes/${encodeURIComponent(loadedQuoteId)}`,
+        `${getApiBase()}/api/quotes/${encodeURIComponent(loadedQuoteId)}`,
         `Quote ${quoteNum} saved.`,
       );
       return;
     }
 
-    await runSaveRequest("POST", `${apiBase}/api/quotes`, `Quote ${quoteNum} saved.`, {
+    await runSaveRequest("POST", `${getApiBase()}/api/quotes`, `Quote ${quoteNum} saved.`, {
       forceNewQuote: true,
     });
   };
@@ -1214,7 +1214,7 @@ export default function QuoteBuilderPage() {
       setSearchLoading(true);
       setSearchError(null);
       try {
-        const response = await fetch(`${apiBase}/api/quotes/search?q=${encodeURIComponent(q)}`);
+        const response = await fetch(`${getApiBase()}/api/quotes/search?q=${encodeURIComponent(q)}`);
         const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
         const isJson = contentType.includes("application/json");
         const parsedBody = isJson
@@ -1250,7 +1250,7 @@ export default function QuoteBuilderPage() {
     setSaveQuoteSuccess(null);
     setSaveQuoteError(null);
     try {
-      const response = await fetch(`${apiBase}/api/quotes/${encodeURIComponent(quoteId)}`);
+      const response = await fetch(`${getApiBase()}/api/quotes/${encodeURIComponent(quoteId)}`);
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
       const isJson = contentType.includes("application/json");
       const parsedBody = isJson

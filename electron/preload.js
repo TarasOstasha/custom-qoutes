@@ -1,5 +1,9 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+contextBridge.exposeInMainWorld("customQuote", {
+  apiBase: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5100",
+});
+
 contextBridge.exposeInMainWorld("electronUpdater", {
   getState: () => ipcRenderer.invoke("updater:get-state"),
   downloadUpdate: () => ipcRenderer.invoke("updater:download"),

@@ -32,7 +32,7 @@ function buildPublicImageUrl(req: Request, filename: string): string {
   const fromEnv = process.env.UPLOAD_PUBLIC_BASE_URL?.trim();
   const base = fromEnv
     ? fromEnv.replace(/\/$/, "")
-    : `${req.protocol || "http"}://${req.get("host") ?? `localhost:${process.env.PORT ?? 5000}`}`;
+    : `${req.protocol || "http"}://${req.get("host") ?? `localhost:${process.env.API_PORT ?? process.env.PORT ?? 5100}`}`;
   return `${base}/api/uploads/${encodeURIComponent(filename)}`;
 }
 

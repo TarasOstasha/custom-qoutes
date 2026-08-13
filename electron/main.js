@@ -4,13 +4,58 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
+const net = require("node:net");
 
-const APP_URL = "http://localhost:3000";
-const API_URL = "http://localhost:5000";
+const DEFAULT_WEB_PORT = 3100;
+const DEFAULT_API_PORT = 5100;
 
 const isDev = !app.isPackaged;
 const devRoot = path.resolve(__dirname, "..");
 const prodAppRoot = path.join(process.resourcesPath, "app");
+
+let appUrl = `http://localhost:${DEFAULT_WEB_PORT}`;
+let apiUrl = `http://localhost:${DEFAULT_API_PORT}`;
+
+function canBindPort(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+async function findFreePort(preferred, label) {
+  const start = Number(preferred);
+
+  if (!Number.isInteger(start) || start <= 0) {
+    throw new Error(`Invalid ${label} port: ${preferred}`);
+  }
+
+  for (let port = start; port < start + 50; port += 1) {
+    if (await canBindPort(port)) {
+      return port;
+    }
+  }
+
+  throw new Error(`No free ${label} port found in range ${start}-${start + 49}`);
+}
+
+async function pickServicePorts() {
+  const preferredApi = Number(process.env.API_PORT ?? DEFAULT_API_PORT);
+  const preferredWeb = Number(process.env.WEB_PORT ?? DEFAULT_WEB_PORT);
+  const apiPort = await findFreePort(preferredApi, "API");
+  let webPort = await findFreePort(preferredWeb, "web");
+
+  if (webPort === apiPort) {
+    webPort = await findFreePort(webPort + 1, "web");
+  }
+
+  return { webPort, apiPort };
+}
 
 function resolvePlaywrightBrowsersPath() {
   const current = process.env.PLAYWRIGHT_BROWSERS_PATH?.trim();
@@ -101,9 +146,9 @@ function waitForHttp(url, timeoutMs = 90_000) {
   });
 }
 
-function startApiInProcess() {
-  process.env.PORT = "5000";
-  process.env.NEXT_PUBLIC_API_URL = API_URL;
+function startApiInProcess(apiPort) {
+  process.env.API_PORT = String(apiPort);
+  process.env.NEXT_PUBLIC_API_URL = apiUrl;
   process.env.VOLUSION_PLAYWRIGHT_HEADLESS = "false";
 
   const apiEntry = isDev
@@ -117,10 +162,10 @@ function startApiInProcess() {
   require(apiEntry);
 }
 
-function startWebInProcess() {
-  process.env.PORT = "3000";
+function startWebInProcess(webPort) {
+  process.env.PORT = String(webPort);
   process.env.HOSTNAME = "localhost";
-  process.env.NEXT_PUBLIC_API_URL = API_URL;
+  process.env.NEXT_PUBLIC_API_URL = apiUrl;
 
   const standaloneDir = isDev
     ? path.join(devRoot, ".next", "standalone")
@@ -161,7 +206,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL(APP_URL);
+  mainWindow.loadURL(appUrl);
 
   if (isDev) {
     mainWindow.webContents.openDevTools();
@@ -184,11 +229,19 @@ app.whenReady().then(async () => {
   try {
     loadEnvironment();
     applyDatabaseFallback();
-    startApiInProcess();
-    startWebInProcess();
 
-    await waitForHttp(`${API_URL}/health`);
-    await waitForHttp(APP_URL);
+    const { webPort, apiPort } = await pickServicePorts();
+    appUrl = `http://localhost:${webPort}`;
+    apiUrl = `http://localhost:${apiPort}`;
+
+    console.log(`Custom Quote web: ${appUrl}`);
+    console.log(`Custom Quote API: ${apiUrl}`);
+
+    startApiInProcess(apiPort);
+    startWebInProcess(webPort);
+
+    await waitForHttp(`${apiUrl}/health`);
+    await waitForHttp(appUrl);
 
     createWindow();
   } catch (error) {

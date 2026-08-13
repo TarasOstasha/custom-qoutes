@@ -78,7 +78,7 @@ async function bootstrap() {
     const express = require("express");
     const cors = require("cors");
     const app = express();
-    const port = Number(process.env.PORT ?? 5000);
+    const port = Number(process.env.API_PORT ?? process.env.PORT ?? 5100);
     app.use(cors({ origin: "*" }));
     app.use(express.json());
     app.get("/health", async (req, res) => {
@@ -95,11 +95,12 @@ async function bootstrap() {
         const available = await isOfficePersistenceAvailable(force);
         res.json({ ok: true, persistenceAvailable: available });
     });
-    await new Promise((resolve) => {
-        app.listen(port, () => {
+    await new Promise((resolve, reject) => {
+        const server = app.listen(port, () => {
             console.log(`Quote API running on http://localhost:${port}`);
             resolve();
         });
+        server.on("error", reject);
     });
     void initializeRoutes(app).catch((error) => {
         console.error("Failed to initialize API routes:", error);

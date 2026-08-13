@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { apiBase } from "./apiBase";
+import { getApiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -79,7 +79,7 @@ async function fetchImageForExcel(
   } catch {
     try {
       const proxied = await fetch(
-        `${apiBase}/quotes/image-proxy?url=${encodeURIComponent(url)}`,
+        `${getApiBase()}/quotes/image-proxy?url=${encodeURIComponent(url)}`,
       );
       if (!proxied.ok) return null;
       const data = (await proxied.json()) as { dataUrl?: string };
