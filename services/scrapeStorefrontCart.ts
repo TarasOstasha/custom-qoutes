@@ -57,7 +57,7 @@ async function launchVisiblePersistentContext(): Promise<BrowserContext> {
 
   liveContext = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
-    args: ["--window-size=1000,900"],
+    args: ["--window-size=1440,900"],
     viewport: null,
     userAgent:
       process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
@@ -81,7 +81,7 @@ async function getOrCreateLiveSession(options: ScrapeStorefrontCartOptions = {})
   if (!liveContext) {
     liveContext = await chromium.launchPersistentContext(userDataDir, {
       headless,
-      args: ["--window-size=1000,900"],
+      args: ["--window-size=1440,900"],
       viewport: null,
       userAgent:
         process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
