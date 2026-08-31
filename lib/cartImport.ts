@@ -1,5 +1,6 @@
 import type { CartItemRow } from "./extractCartFromPage";
 import type { QuoteItem } from "./mockQuote";
+import { normalizeExtraImageUrls } from "./quoteItemImages";
 import { round2 } from "./recalcQuote";
 
 /** Volusion cart lines must have a positive EACH/TOTAL price; option sub-rows repeat the SKU at $0. */
@@ -139,25 +140,49 @@ export function updateQuoteLineQty(items: QuoteItem[], itemId: string, qty: numb
 }
 
 export function serializeQuoteItemsForDb(
-  items: Array<Pick<QuoteItem, "sku" | "sourceProductId" | "name" | "description" | "imageUrl" | "qty" | "unitPrice" | "lineTotal" | "chosenOptions" | "importLineId">>,
+  items: Array<
+    Pick<
+      QuoteItem,
+      | "sku"
+      | "sourceProductId"
+      | "name"
+      | "description"
+      | "imageUrl"
+      | "extraImageUrls"
+      | "qty"
+      | "unitPrice"
+      | "lineTotal"
+      | "chosenOptions"
+      | "importLineId"
+    >
+  >,
 ) {
-  return items.map((item) => ({
-    product_code: item.sku ?? item.sourceProductId ?? null,
-    description: item.name ?? null,
-    optional_description: item.description ?? null,
-    image_url: item.imageUrl || null,
-    qty: Number(item.qty),
-    unit_price: Number(item.unitPrice),
-    amount: Number(item.lineTotal),
-    options_json:
-      item.chosenOptions?.length || item.imageUrl || item.importLineId
-        ? {
-            ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
-            ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
-            ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
-          }
-        : null,
-  }));
+  return items.map((item) => {
+    const extraImageUrls = (item.extraImageUrls ?? [])
+      .map((url) => url.trim())
+      .filter(Boolean);
+    return {
+      product_code: item.sku ?? item.sourceProductId ?? null,
+      description: item.name ?? null,
+      optional_description: item.description ?? null,
+      image_url: item.imageUrl || null,
+      qty: Number(item.qty),
+      unit_price: Number(item.unitPrice),
+      amount: Number(item.lineTotal),
+      options_json:
+        item.chosenOptions?.length ||
+        item.imageUrl ||
+        extraImageUrls.length ||
+        item.importLineId
+          ? {
+              ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+              ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+              ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
+              ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
+            }
+          : null,
+    };
+  });
 }
 
 export function deserializeQuoteItemFromDb(
@@ -174,8 +199,18 @@ export function deserializeQuoteItemFromDb(
     unitPrice?: number | string | null;
     unit_price?: number | string | null;
     amount?: number | string | null;
-    optionsJson?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
-    options_json?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
+    optionsJson?: {
+      chosen_options?: string[];
+      image_url?: string;
+      extra_image_urls?: string[];
+      import_line_id?: string;
+    } | null;
+    options_json?: {
+      chosen_options?: string[];
+      image_url?: string;
+      extra_image_urls?: string[];
+      import_line_id?: string;
+    } | null;
   },
   index: number,
   quoteId: string,
@@ -188,6 +223,7 @@ export function deserializeQuoteItemFromDb(
   const options = item.optionsJson ?? item.options_json ?? null;
   const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
   const imageFromOptions = options?.image_url?.trim() || null;
+  const extraImageUrls = normalizeExtraImageUrls(options?.extra_image_urls);
 
   return {
     id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
@@ -197,6 +233,7 @@ export function deserializeQuoteItemFromDb(
     sku: productCode,
     importLineId: options?.import_line_id ?? null,
     imageUrl: imageFromDb ?? imageFromOptions,
+    extraImageUrls,
     name: item.description ?? productCode ?? "Line Item",
     description: item.optionalDescription ?? item.optional_description ?? null,
     chosenOptions: options?.chosen_options ?? null,

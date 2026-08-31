@@ -7,6 +7,8 @@ export type QuoteItem = {
   sourceProductId?: string | null;
   sku?: string | null;
   imageUrl?: string | null;
+  /** Additional uploaded images shown in the product gallery (kept alongside imageUrl). */
+  extraImageUrls?: string[] | null;
   name: string;
   description?: string | null;
   /** Cart/product options the user checked in the builder; included on PDF export. */
@@ -160,7 +162,7 @@ export function createEmptyQuote(): Quote {
   const t = new Date().toISOString();
   return {
     id: "q_draft",
-    quoteNumber: "EX260127A",
+    quoteNumber: "",
     status: "draft",
     version: 1,
     customerName: null,

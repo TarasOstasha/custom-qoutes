@@ -4,6 +4,7 @@ import { getApiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
+import { getQuoteItemImageUrls } from "./quoteItemImages";
 import { formatShippingTotalLabel } from "./shippingMethod";
 import { formatTaxRowLabel, quoteGrandTotalIsTbd } from "./taxLabel";
 
@@ -279,7 +280,8 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   const galleryW = pageWidth - 2 * margin;
 
   const galleryUrls = quote.items
-    .map((i) => normalizeProductImageUrl(i.imageUrl) ?? i.imageUrl ?? "")
+    .flatMap((i) => getQuoteItemImageUrls(i))
+    .map((url) => normalizeProductImageUrl(url) ?? url)
     .filter(Boolean);
 
   const pad = 10;

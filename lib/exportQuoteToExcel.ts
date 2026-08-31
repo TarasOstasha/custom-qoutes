@@ -3,6 +3,7 @@ import { getApiBase } from "./apiBase";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
+import { getQuoteItemImageUrls } from "./quoteItemImages";
 import { formatShippingTotalLabel } from "./shippingMethod";
 import { formatTaxRowLabel, quoteGrandTotalIsTbd } from "./taxLabel";
 
@@ -223,10 +224,10 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
   row += 1;
 
   // PRODUCT IMAGES
-  const galleryItems = quote.items.filter((i) => Boolean(i.imageUrl?.trim()));
-  const galleryUrls = galleryItems.map((i) =>
-    preferHighQualityImageUrl(i.imageUrl),
-  );
+  const galleryUrls = quote.items
+    .flatMap((i) => getQuoteItemImageUrls(i))
+    .map((url) => preferHighQualityImageUrl(url))
+    .filter(Boolean);
 
   const galleryResults = await Promise.all(
     galleryUrls.map((u) => (u ? fetchImageForExcel(u) : Promise.resolve(null))),

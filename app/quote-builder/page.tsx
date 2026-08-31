@@ -9,6 +9,7 @@ import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGa
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
+import { normalizeExtraImageUrls } from "../../lib/quoteItemImages";
 import { recalcQuote, recalcQuotePreservingTaxRate, round2 } from "../../lib/recalcQuote";
 import {
   formatShippingDestination,
@@ -106,8 +107,18 @@ type ApiQuoteItem = {
   unitPrice: number | string | null;
   unit_price?: number | string | null;
   amount: number | string | null;
-  optionsJson?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
-  options_json?: { chosen_options?: string[]; image_url?: string; import_line_id?: string } | null;
+  optionsJson?: {
+    chosen_options?: string[];
+    image_url?: string;
+    extra_image_urls?: string[];
+    import_line_id?: string;
+  } | null;
+  options_json?: {
+    chosen_options?: string[];
+    image_url?: string;
+    extra_image_urls?: string[];
+    import_line_id?: string;
+  } | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -483,14 +494,34 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  const removeItemImage = (itemId: string) => {
+  const removeItemImage = (itemId: string, imageUrl: string) => {
+    const targetUrl = imageUrl.trim();
+    if (!targetUrl) return;
+
     setQuote((prev) => {
       const index = prev.items.findIndex((i) => i.id === itemId);
       if (index < 0) return prev;
+      const current = prev.items[index];
+      if (!current) return prev;
+      const primary = current.imageUrl?.trim() || null;
+      const extras = (current.extraImageUrls ?? [])
+        .map((url) => url.trim())
+        .filter(Boolean);
+
+      let nextPrimary = primary;
+      let nextExtras = extras;
+
+      if (primary === targetUrl) {
+        nextPrimary = null;
+      } else {
+        nextExtras = extras.filter((url) => url !== targetUrl);
+      }
+
       const items = [...prev.items];
       items[index] = {
-        ...items[index],
-        imageUrl: null,
+        ...current,
+        imageUrl: nextPrimary,
+        extraImageUrls: nextExtras.length ? nextExtras : null,
         updatedAt: new Date().toISOString(),
       } as QuoteItem;
       return {
@@ -670,7 +701,7 @@ export default function QuoteBuilderPage() {
     if (!file || !targetId) return;
 
     const item = quote.items.find((i) => i.id === targetId);
-    if (!item || item.lineType !== "custom" || isQuoteDiscountLine(item)) {
+    if (!item || isQuoteDiscountLine(item)) {
       setCustomImageTargetId(null);
       return;
     }
@@ -687,14 +718,40 @@ export default function QuoteBuilderPage() {
         alert(data?.error ?? "Failed to upload image");
         return;
       }
+      const uploadedUrl = data.image_url.trim();
 
       setQuote((prev) => {
         const index = prev.items.findIndex((i) => i.id === targetId);
         if (index < 0) return prev;
+        const current = prev.items[index];
+        if (!current) return prev;
+        const primary = current.imageUrl?.trim() || null;
+        const extras = (current.extraImageUrls ?? [])
+          .map((url) => url.trim())
+          .filter(Boolean);
+
+        // Always add — keep existing product image and append custom uploads.
+        if (!primary) {
+          const items = [...prev.items];
+          items[index] = {
+            ...current,
+            imageUrl: uploadedUrl,
+            updatedAt: new Date().toISOString(),
+          } as QuoteItem;
+          return {
+            ...prev,
+            ...recalcQuotePreservingTaxRate(prev, items),
+          };
+        }
+
+        if (primary === uploadedUrl || extras.includes(uploadedUrl)) {
+          return prev;
+        }
+
         const items = [...prev.items];
         items[index] = {
-          ...items[index],
-          imageUrl: data.image_url,
+          ...current,
+          extraImageUrls: [...extras, uploadedUrl],
           updatedAt: new Date().toISOString(),
         } as QuoteItem;
         return {
@@ -1283,6 +1340,7 @@ export default function QuoteBuilderPage() {
           sourceProductId: productCode,
           sku: productCode,
           imageUrl: imageFromDb ?? imageFromOptions,
+          extraImageUrls: normalizeExtraImageUrls(options?.extra_image_urls),
           name: item.description ?? productCode ?? "Line Item",
           description: item.optionalDescription ?? item.optional_description ?? null,
           importLineId: options?.import_line_id ?? null,
@@ -1683,16 +1741,6 @@ export default function QuoteBuilderPage() {
                             : "Get Options"}
                       </button>
                     ) : null}
-                    {item.lineType === "custom" && !isQuoteDiscountLine(item) ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        style={{ marginTop: 8, width: "100%", padding: "6px 10px" }}
-                        onClick={() => openCustomImagePicker(item.id)}
-                      >
-                        {item.imageUrl ? "Change Img" : "Add Img"}
-                      </button>
-                    ) : null}
                   </td>
                   <td>
                     <div
@@ -1726,6 +1774,37 @@ export default function QuoteBuilderPage() {
                                   placeholder="Additional option details"
                                   style={{ width: "100%", marginTop: 6 }}
                                 />
+                              ) : null}
+                              {!isQuoteDiscountLine(item) ? (
+                                <span
+                                  style={{
+                                    position: "relative",
+                                    display: "inline-block",
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ padding: "6px 10px", paddingRight: 22 }}
+                                    onClick={() => openCustomImagePicker(item.id)}
+                                  >
+                                    Add custom img
+                                  </button>
+                                  <span
+                                    className="add-custom-img-help"
+                                    title="Add custom images to this product. New images are added alongside the existing product photo - remove any image with x in the gallery."
+                                    aria-label="Help: add custom images to this product"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    ?
+                                    <span className="add-custom-img-help-tip" role="tooltip">
+                                      Add custom images to this product. Uploads are added alongside the
+                                      existing product photo — remove any image yourself with × in the
+                                      gallery.
+                                    </span>
+                                  </span>
+                                </span>
                               ) : null}
                             </>
                           );
