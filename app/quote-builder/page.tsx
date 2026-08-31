@@ -1868,6 +1868,7 @@ export default function QuoteBuilderPage() {
                       <td>
                         <input
                           type="number"
+                          className="no-spinner"
                           step={item.lineType === "custom" ? "any" : undefined}
                           min={item.lineType === "custom" ? undefined : 0}
                           value={item.unitPrice}

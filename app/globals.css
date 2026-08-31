@@ -100,6 +100,18 @@ textarea {
   background: #fff;
 }
 
+/* Hide increment/decrement spinners on number fields (e.g. Unit Price). */
+input.no-spinner::-webkit-outer-spin-button,
+input.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input.no-spinner[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 textarea {
   min-height: 72px;
   resize: vertical;

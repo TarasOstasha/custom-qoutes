@@ -390,9 +390,26 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.setDrawColor(209, 213, 219);
   doc.line(margin, notesY, pageWidth - margin, notesY);
   doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
   doc.text("NOTES:", margin, notesY + 18);
   doc.setFont("helvetica", "normal");
-  doc.text(quote.notes || "—", margin, notesY + 36);
+  doc.setFontSize(11);
+
+  const notesMaxWidth = pageWidth - margin * 2;
+  const notesLineHeight = 14;
+  const notesBottomLimit = pageHeight - 40;
+  const notesText = (quote.notes || "—").trim() || "—";
+  const notesLines = doc.splitTextToSize(notesText, notesMaxWidth) as string[];
+
+  let noteLineY = notesY + 36;
+  for (const line of notesLines) {
+    if (noteLineY > notesBottomLimit) {
+      doc.addPage();
+      noteLineY = margin + 18;
+    }
+    doc.text(line, margin, noteLineY);
+    noteLineY += notesLineHeight;
+  }
 
   doc.setFontSize(11);
   doc.setTextColor(107, 114, 128);
