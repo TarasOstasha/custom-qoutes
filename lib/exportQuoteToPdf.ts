@@ -99,6 +99,60 @@ async function loadLogoDataUrl(): Promise<string | null> {
   return null;
 }
 
+function isUploadedImageUrl(url: string): boolean {
+  return /\/api\/uploads\//i.test(url);
+}
+
+function getDataUrlDimensions(
+  dataUrl: string,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () =>
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = dataUrl;
+  });
+}
+
+/** object-fit: contain within a fixed box, centered. */
+function containFitRect(
+  naturalW: number,
+  naturalH: number,
+  boxW: number,
+  boxH: number,
+): { offsetX: number; offsetY: number; drawW: number; drawH: number } {
+  if (naturalW <= 0 || naturalH <= 0) {
+    return { offsetX: 0, offsetY: 0, drawW: boxW, drawH: boxH };
+  }
+  const scale = Math.min(boxW / naturalW, boxH / naturalH);
+  const drawW = naturalW * scale;
+  const drawH = naturalH * scale;
+  return {
+    offsetX: (boxW - drawW) / 2,
+    offsetY: (boxH - drawH) / 2,
+    drawW,
+    drawH,
+  };
+}
+
+/** Empty gallery slots to the right of `colIndex` in the same row (for wider upload contain). */
+function trailingEmptySlotsInRow(
+  colIndex: number,
+  rowIndex: number,
+  imageCount: number,
+  perRow: number,
+): number {
+  const rowStart = rowIndex * perRow;
+  const rowEnd = Math.min(rowStart + perRow, imageCount);
+  let span = 1;
+  for (let col = colIndex + 1; col < perRow; col++) {
+    if (rowStart + col < rowEnd) break;
+    span++;
+  }
+  return span;
+}
+
 async function loadImageDataUrl(src: string): Promise<string | null> {
   try {
     const res = await fetch(src);
@@ -287,19 +341,56 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.rect(galleryX, galleryY, galleryW, galleryH);
 
   if (galleryUrls.length > 0) {
-    const imageData = await Promise.all(
-      galleryUrls.map((u) => loadImageDataUrl(u)),
+    const imageEntries = await Promise.all(
+      galleryUrls.map(async (url) => ({
+        url,
+        dataUrl: await loadImageDataUrl(url),
+      })),
     );
-    const loaded = imageData.filter((d): d is string => Boolean(d));
+    const loaded = imageEntries.filter(
+      (entry): entry is { url: string; dataUrl: string } =>
+        Boolean(entry.dataUrl),
+    );
     if (loaded.length > 0) {
-      loaded.forEach((dataUrl, i) => {
+      for (let i = 0; i < loaded.length; i++) {
+        const { url, dataUrl } = loaded[i]!;
         const rowIndex = Math.floor(i / perRow);
         const colIndex = i % perRow;
-        const x = galleryX + pad + colIndex * (slotW + gap);
-        const y = galleryY + 14 + rowIndex * (imgH + rowGap);
+        const boxX = galleryX + pad + colIndex * (slotW + gap);
+        const boxY = galleryY + 14 + rowIndex * (imgH + rowGap);
         const format = /^data:image\/jpe?g/i.test(dataUrl) ? "JPEG" : "PNG";
-        doc.addImage(dataUrl, format, x, y, imgW, imgH, undefined, "FAST");
-      });
+
+        if (isUploadedImageUrl(url)) {
+          try {
+            const { width, height } = await getDataUrlDimensions(dataUrl);
+            const span =
+              width > height
+                ? trailingEmptySlotsInRow(
+                    colIndex,
+                    rowIndex,
+                    loaded.length,
+                    perRow,
+                  )
+                : 1;
+            const uploadBoxW = span * slotW + (span - 1) * gap;
+            const fit = containFitRect(width, height, uploadBoxW, imgH);
+            doc.addImage(
+              dataUrl,
+              format,
+              boxX + fit.offsetX,
+              boxY + fit.offsetY,
+              fit.drawW,
+              fit.drawH,
+              undefined,
+              "FAST",
+            );
+          } catch {
+            doc.addImage(dataUrl, format, boxX, boxY, imgW, imgH, undefined, "FAST");
+          }
+        } else {
+          doc.addImage(dataUrl, format, boxX, boxY, imgW, imgH, undefined, "FAST");
+        }
+      }
     }
   }
 
