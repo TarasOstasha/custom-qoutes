@@ -7,7 +7,8 @@ import { getApiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
-import { createEmptyQuote, Quote, QuoteItem } from "../../lib/mockQuote";
+import { createEmptyQuote, defaultQuoteNumberFromDate, Quote, QuoteItem } from "../../lib/mockQuote";
+import { customerInfoFromPaste, formatCustomerInfoBlock } from "../../lib/customerInfo";
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { normalizeExtraImageUrls } from "../../lib/quoteItemImages";
 import { recalcQuote, recalcQuotePreservingTaxRate, round2 } from "../../lib/recalcQuote";
@@ -160,10 +161,10 @@ const asNumber = (value: string | number | null | undefined): number => {
 function cartPayloadHasImportableData(payload: CartPayload): boolean {
   return Boolean(
     payload.cartItems.length ||
-      payload.shippingTotal ||
-      payload.taxTotal ||
-      payload.shippingState ||
-      payload.shippingZip
+    payload.shippingTotal ||
+    payload.taxTotal ||
+    payload.shippingState ||
+    payload.shippingZip
   );
 }
 const dbQuoteIdPattern =
@@ -189,10 +190,10 @@ export default function QuoteBuilderPage() {
         shippingMethod: resolveEffectiveShippingMethod(stored),
         shippingOptions: stored.shippingOptions?.length
           ? reconcileShippingSelectionWithTotal(
-              stored.shippingOptions,
-              stored.shippingTotal,
-              stored.shippingMethod,
-            ).shippingOptions ?? stored.shippingOptions
+            stored.shippingOptions,
+            stored.shippingTotal,
+            stored.shippingMethod,
+          ).shippingOptions ?? stored.shippingOptions
           : stored.shippingOptions ?? null,
       });
       setLoadedQuoteId(dbQuoteIdPattern.test(stored.id) ? stored.id : null);
@@ -326,10 +327,10 @@ export default function QuoteBuilderPage() {
         shippingMethod: resolved,
         shippingOptions: prev.shippingOptions?.length
           ? reconcileShippingSelectionWithTotal(
-              prev.shippingOptions,
-              nextShippingTotal,
-              resolved,
-            ).shippingOptions ?? prev.shippingOptions
+            prev.shippingOptions,
+            nextShippingTotal,
+            resolved,
+          ).shippingOptions ?? prev.shippingOptions
           : prev.shippingOptions ?? null,
         ...recalcQuotePreservingTaxRate(prev, prev.items, {
           shippingTotal: nextShippingTotal,
@@ -777,7 +778,7 @@ export default function QuoteBuilderPage() {
       sku: null,
       imageUrl: null,
       name: isDiscount ? "Discount" : "Custom Item",
-      description: isDiscount ? "Quote discount" : "Editable custom line",
+      description: isDiscount ? "Quote discount" : "",
       qty: 1,
       unitPrice: 0,
       discountType: isDiscount ? "amount" : "none",
@@ -828,11 +829,11 @@ export default function QuoteBuilderPage() {
       const reconciledOptions = reconciled.shippingOptions ?? shippingOptions;
       const cartResolved = cartPayloadHasShippingChoice(payload)
         ? resolveShippingMethodFromCartPayload({
-            ...payload,
-            shippingOptions: reconciledOptions,
-            selectedShippingValue: reconciled.selectedShippingValue,
-            selectedShippingOption: reconciled.selectedShippingOption,
-          }, "")
+          ...payload,
+          shippingOptions: reconciledOptions,
+          selectedShippingValue: reconciled.selectedShippingValue,
+          selectedShippingOption: reconciled.selectedShippingOption,
+        }, "")
         : "";
       const optionsResolved = resolveShippingMethodFromShippingOptions(
         reconciledOptions,
@@ -1138,12 +1139,12 @@ export default function QuoteBuilderPage() {
       const isJson = contentType.includes("application/json");
       const parsedBody = isJson
         ? ((await response.json()) as {
-            id?: string;
-            error?: string;
-            message?: string;
-            persisted?: boolean;
-            offline?: boolean;
-          })
+          id?: string;
+          error?: string;
+          message?: string;
+          persisted?: boolean;
+          offline?: boolean;
+        })
         : await response.text();
 
       console.log("[saveQuote] response:", { method, status: response.status, body: parsedBody });
@@ -1548,7 +1549,17 @@ export default function QuoteBuilderPage() {
                 >
                   <div style={{ fontWeight: 600 }}>{result.quoteNumber || "(no quote #)"}</div>
                   <div className="muted" style={{ fontSize: 12 }}>
-                    {[result.customerName, result.company, result.email].filter(Boolean).join(" · ")}
+                    {formatCustomerInfoBlock({
+                      customerName: result.customerName,
+                      customerCompany: result.company,
+                      customerEmail: result.email,
+                      customerPhone: null,
+                      customerAddress: null,
+                    })
+                      .split("\n")
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .join(" · ") || "—"}
                   </div>
                 </button>
               ))}
@@ -1583,7 +1594,20 @@ export default function QuoteBuilderPage() {
               type="date"
               value={quoteDateToInputValue(quote.quoteDate)}
               onChange={(e) =>
-                setQuote((prev) => ({ ...prev, quoteDate: inputValueToQuoteDate(e.target.value) }))
+                setQuote((prev) => {
+                  const nextDate = inputValueToQuoteDate(e.target.value);
+                  const prevDefault = defaultQuoteNumberFromDate(prev.quoteDate);
+                  const currentNum = prev.quoteNumber.trim();
+                  const stillAuto =
+                    !currentNum || currentNum === prevDefault;
+                  return {
+                    ...prev,
+                    quoteDate: nextDate,
+                    ...(stillAuto
+                      ? { quoteNumber: defaultQuoteNumberFromDate(nextDate) }
+                      : {}),
+                  };
+                })
               }
             />
           </div>
@@ -1599,55 +1623,37 @@ export default function QuoteBuilderPage() {
 
         <div className="section">
           <h2 style={{ marginTop: 0 }}>Customer Info</h2>
-          <div className="grid-2">
-            <div>
-              <label>Name</label>
-              <input
-                value={quote.customerName ?? ""}
-                onChange={(e) => setQuote((prev) => ({ ...prev, customerName: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Company</label>
-              <input
-                value={quote.customerCompany ?? ""}
-                onChange={(e) => setQuote((prev) => ({ ...prev, customerCompany: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Email</label>
-              <input
-                value={quote.customerEmail ?? ""}
-                onChange={(e) => setQuote((prev) => ({ ...prev, customerEmail: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Phone</label>
-              <input
-                value={quote.customerPhone ?? ""}
-                onChange={(e) => setQuote((prev) => ({ ...prev, customerPhone: e.target.value }))}
-              />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label>Address</label>
-              <textarea
-                value={quote.customerAddress ?? ""}
-                onChange={(e) => setQuote((prev) => ({ ...prev, customerAddress: e.target.value }))}
-                placeholder="Street, city, state, zip"
-                style={{
-                  marginTop: 8,
-                  width: "100%",
-                  minHeight: 72,
-                  border: "1px solid #d1d5db",
-                  borderRadius: 6,
-                  padding: "10px 12px",
-                  font: "inherit",
-                  resize: "vertical",
-                  background: "#fff",
-                }}
-              />
-            </div>
-          </div>
+          <label htmlFor="customer-info-block">Paste customer details</label>
+          <textarea
+            id="customer-info-block"
+            value={formatCustomerInfoBlock(quote)}
+            onChange={(e) =>
+              setQuote((prev) => ({
+                ...prev,
+                ...customerInfoFromPaste(e.target.value),
+              }))
+            }
+            placeholder={`Medvantx
+              Julie Morrell
+              4005 Carmel View Road Unit 69
+              San Diego, CA 92130
+              United States
+              (919) 699-3466
+              Julie.Morrell@medvantx.com`}
+            style={{
+              marginTop: 8,
+              width: "100%",
+              minHeight: 160,
+              border: "1px solid #d1d5db",
+              borderRadius: 6,
+              padding: "10px 12px",
+              font: "inherit",
+              lineHeight: 1.45,
+              resize: "vertical",
+              background: "#fff",
+              whiteSpace: "pre-wrap",
+            }}
+          />
         </div>
 
         <div className="section">
@@ -1674,301 +1680,306 @@ export default function QuoteBuilderPage() {
             <tbody>
               {quote.items.map((item, index) => (
                 <Fragment key={item.id}>
-                <tr>
-                  <td>
-                    <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                      <button
-                        type="button"
-                        className="line-item-move-btn"
-                        aria-label={`Move ${item.name} up`}
-                        title="Move up"
-                        disabled={index === 0 || quote.items.length <= 1}
-                        onClick={() => moveLineItem(index, "up")}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path
-                            d="M12 19V5M5 12l7-7 7 7"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="line-item-move-btn"
-                        aria-label={`Move ${item.name} down`}
-                        title="Move down"
-                        disabled={index === quote.items.length - 1 || quote.items.length <= 1}
-                        onClick={() => moveLineItem(index, "down")}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path
-                            d="M12 5v14M5 12l7 7 7-7"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                    <input
-                      value={item.sku ?? ""}
-                      placeholder="Custom"
-                      onChange={(e) => updateItem(index, { sku: e.target.value || null })}
-                    />
-                    {item.lineType !== "custom" ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        style={{ marginTop: 8, width: "100%", padding: "6px 10px" }}
-                        onClick={() => {
-                          const optionState = lineItemOptions[item.id];
-                          if (optionState?.expanded) {
-                            toggleLineOptions(item.id);
-                            return;
-                          }
-                          getLineOptions(item);
-                        }}
-                        disabled={!lastCartPayload || !lastCartPayload.cartItems.length}
-                      >
-                        {lineItemOptions[item.id]?.loading
-                          ? "Loading..."
-                          : lineItemOptions[item.id]?.expanded
-                            ? "Hide Options"
-                            : "Get Options"}
-                      </button>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <input
-                          value={item.name}
-                          onChange={(e) => updateItem(index, { name: e.target.value })}
-                          style={{ marginBottom: 6, width: "100%" }}
-                        />
-                        {(() => {
-                          const descFields = splitDescriptionFields(item.description ?? "");
-                          return (
-                            <>
-                              <input
-                                value={descFields.primary}
-                                onChange={(e) => updateDescriptionField(index, item, "primary", e.target.value)}
-                                placeholder="Optional description"
-                                style={{ width: "100%" }}
-                              />
-                              {descFields.secondary ? (
-                                <input
-                                  value={descFields.secondary}
-                                  onChange={(e) => updateDescriptionField(index, item, "secondary", e.target.value)}
-                                  placeholder="Additional option details"
-                                  style={{ width: "100%", marginTop: 6 }}
-                                />
-                              ) : null}
-                              {!isQuoteDiscountLine(item) ? (
-                                <span
-                                  style={{
-                                    position: "relative",
-                                    display: "inline-block",
-                                    marginTop: 8,
-                                  }}
-                                >
-                                  <button
-                                    type="button"
-                                    className="btn"
-                                    style={{ padding: "6px 10px", paddingRight: 22 }}
-                                    onClick={() => openCustomImagePicker(item.id)}
-                                  >
-                                    Add custom img
-                                  </button>
-                                  <span
-                                    className="add-custom-img-help"
-                                    title="Add custom images to this product. New images are added alongside the existing product photo - remove any image with x in the gallery."
-                                    aria-label="Help: add custom images to this product"
-                                    onClick={(event) => event.stopPropagation()}
-                                  >
-                                    ?
-                                    <span className="add-custom-img-help-tip" role="tooltip">
-                                      Add custom images to this product. Uploads are added alongside the
-                                      existing product photo — remove any image yourself with × in the
-                                      gallery.
-                                    </span>
-                                  </span>
-                                </span>
-                              ) : null}
-                            </>
-                          );
-                        })()}
-                      </div>
-                      <button
-                        type="button"
-                        className="quote-preview-remove-line"
-                        aria-label={`Remove ${item.name}`}
-                        title="Remove line"
-                        onClick={() => removeLine(item.id)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </td>
-                  {isQuoteDiscountLine(item) ? (
-                    <>
-                      <td>
-                        <select
-                          value={item.discountType === "percent" ? "percent" : "amount"}
-                          onChange={(e) =>
-                            updateItem(index, {
-                              discountType: e.target.value === "percent" ? "percent" : "amount",
-                            })
-                          }
-                          style={{ width: "100%" }}
-                        >
-                          <option value="amount">$ Amount</option>
-                          <option value="percent">% Off</option>
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min={0}
-                          step={item.discountType === "percent" ? "0.01" : "any"}
-                          value={item.discountValue}
-                          placeholder={item.discountType === "percent" ? "e.g. 10" : "e.g. 50"}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            updateItem(index, { discountValue: Number.isFinite(n) ? Math.max(0, n) : 0 });
-                          }}
-                        />
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>
-                        <input
-                          type="number"
-                          step={item.lineType === "custom" ? "any" : 1}
-                          min={item.lineType === "custom" ? undefined : 1}
-                          value={item.qty}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            updateItem(index, { qty: Number.isFinite(n) ? n : 0 });
-                          }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="no-spinner"
-                          step={item.lineType === "custom" ? "any" : undefined}
-                          min={item.lineType === "custom" ? undefined : 0}
-                          value={item.unitPrice}
-                          placeholder={item.lineType === "custom" ? "e.g. -50 for credit" : undefined}
-                          title={
-                            item.lineType === "custom"
-                              ? "Negative unit price or qty reduces the quote total (credit line)"
-                              : undefined
-                          }
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            updateItem(index, { unitPrice: Number.isFinite(n) ? n : 0 });
-                          }}
-                        />
-                      </td>
-                    </>
-                  )}
-                  <td className="right">{currency(item.lineTotal)}</td>
-                </tr>
-                {item.lineType !== "custom" && lineItemOptions[item.id]?.expanded ? (
                   <tr>
-                    <td colSpan={5} style={{ background: "#f8fafc", borderTop: "none", padding: 10 }}>
+                    <td>
+                      <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                        <button
+                          type="button"
+                          className="line-item-move-btn"
+                          aria-label={`Move ${item.name} up`}
+                          title="Move up"
+                          disabled={index === 0 || quote.items.length <= 1}
+                          onClick={() => moveLineItem(index, "up")}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M12 19V5M5 12l7-7 7 7"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="line-item-move-btn"
+                          aria-label={`Move ${item.name} down`}
+                          title="Move down"
+                          disabled={index === quote.items.length - 1 || quote.items.length <= 1}
+                          onClick={() => moveLineItem(index, "down")}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M12 5v14M5 12l7 7 7-7"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                      <input
+                        value={item.sku ?? ""}
+                        placeholder="Custom"
+                        onChange={(e) => updateItem(index, { sku: e.target.value || null })}
+                      />
+                      {item.lineType !== "custom" ? (
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ marginTop: 8, width: "100%", padding: "6px 10px" }}
+                          onClick={() => {
+                            const optionState = lineItemOptions[item.id];
+                            if (optionState?.expanded) {
+                              toggleLineOptions(item.id);
+                              return;
+                            }
+                            getLineOptions(item);
+                          }}
+                          disabled={!lastCartPayload || !lastCartPayload.cartItems.length}
+                        >
+                          {lineItemOptions[item.id]?.loading
+                            ? "Loading..."
+                            : lineItemOptions[item.id]?.expanded
+                              ? "Hide Options"
+                              : "Get Options"}
+                        </button>
+                      ) : null}
+                    </td>
+                    <td>
                       <div
                         style={{
-                          border: "1px solid #d1d5db",
-                          borderRadius: 6,
-                          padding: 10,
-                          background: "#fff",
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
                         }}
                       >
-                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Options</div>
-                        {lineItemOptions[item.id]?.error ? (
-                          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                            {lineItemOptions[item.id]?.error}
-                          </div>
-                        ) : null}
-                        <div
-                          style={{
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 6,
-                            overflow: "hidden",
-                            textAlign: "left",
-                          }}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <input
+                            value={item.name}
+                            onChange={(e) => updateItem(index, { name: e.target.value })}
+                            style={{ marginBottom: 6, width: "100%" }}
+                          />
+                          {(() => {
+                            const descFields = splitDescriptionFields(item.description ?? "");
+                            return (
+                              <>
+                                <input
+                                  value={descFields.primary}
+                                  onChange={(e) => updateDescriptionField(index, item, "primary", e.target.value)}
+                                  placeholder="Optional description"
+                                  style={{ width: "100%" }}
+                                />
+                                {descFields.secondary ? (
+                                  <input
+                                    value={descFields.secondary}
+                                    onChange={(e) => updateDescriptionField(index, item, "secondary", e.target.value)}
+                                    placeholder="Additional option details"
+                                    style={{ width: "100%", marginTop: 6 }}
+                                  />
+                                ) : null}
+                                {!isQuoteDiscountLine(item) ? (
+                                  <span
+                                    style={{
+                                      position: "relative",
+                                      display: "inline-block",
+                                      marginTop: 8,
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      style={{ padding: "6px 10px", paddingRight: 22 }}
+                                      onClick={() => openCustomImagePicker(item.id)}
+                                    >
+                                      Add custom img
+                                    </button>
+                                    <span
+                                      className="add-custom-img-help"
+                                      title="Add custom images to this product. New images are added alongside the existing product photo - remove any image with x in the gallery."
+                                      aria-label="Help: add custom images to this product"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      ?
+                                      <span className="add-custom-img-help-tip" role="tooltip">
+                                        Add custom images to this product. Uploads are added alongside the
+                                        existing product photo — remove any image yourself with × in the
+                                        gallery.
+                                      </span>
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <button
+                          type="button"
+                          className="quote-preview-remove-line"
+                          aria-label={`Remove ${item.name}`}
+                          title="Remove line"
+                          onClick={() => removeLine(item.id)}
                         >
-                        {(lineItemOptions[item.id]?.options ?? []).map((option, optionIndex) => {
-                          const checkboxId = `opt_${item.id}_${option}`;
-                          return (
-                            <label
-                              key={option}
-                              htmlFor={checkboxId}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "28px 1fr",
-                                alignItems: "start",
-                                gap: 6,
-                                padding: "7px 10px",
-                                background: optionIndex % 2 === 0 ? "#ffffff" : "#f8fafc",
-                                borderBottom:
-                                  optionIndex === (lineItemOptions[item.id]?.options?.length ?? 1) - 1
-                                    ? "none"
-                                    : "1px solid #edf2f7",
-                                fontSize: 13,
-                              }}
-                            >
-                              <input
-                                id={checkboxId}
-                                type="checkbox"
-                                checked={(lineItemOptions[item.id]?.selected ?? []).includes(option)}
-                                onChange={() => toggleOptionSelection(index, item.id, option)}
-                                style={{ marginTop: 2, justifySelf: "center" }}
-                              />
-                              <span>{option}</span>
-                            </label>
-                          );
-                        })}
-                        </div>
-                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{ padding: "4px 8px", fontSize: 12 }}
-                            onClick={() => applySelectedOptionsToDescription(index, item)}
-                            disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
-                          >
-                            Apply Selected
-                          </button>
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{ padding: "4px 8px", fontSize: 12 }}
-                            onClick={() => clearSelectedOptions(index, item.id)}
-                            disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
-                          >
-                            Clear
-                          </button>
-                        </div>
+                          ×
+                        </button>
                       </div>
                     </td>
+                    {isQuoteDiscountLine(item) ? (
+                      <>
+                        <td>
+                          <select
+                            value={item.discountType === "percent" ? "percent" : "amount"}
+                            onChange={(e) =>
+                              updateItem(index, {
+                                discountType: e.target.value === "percent" ? "percent" : "amount",
+                              })
+                            }
+                            style={{ width: "100%" }}
+                          >
+                            <option value="amount">$ Amount</option>
+                            <option value="percent">% Off</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={0}
+                            step={item.discountType === "percent" ? "0.01" : "any"}
+                            value={item.discountValue}
+                            placeholder={item.discountType === "percent" ? "e.g. 10" : "e.g. 50"}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              updateItem(index, { discountValue: Number.isFinite(n) ? Math.max(0, n) : 0 });
+                            }}
+                          />
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>
+                          <input
+                            type="number"
+                            step={item.lineType === "custom" ? "any" : 1}
+                            min={item.lineType === "custom" ? undefined : 1}
+                            value={item.qty}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              updateItem(index, { qty: Number.isFinite(n) ? n : 0 });
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="no-spinner"
+                            step={item.lineType === "custom" ? "any" : undefined}
+                            min={item.lineType === "custom" ? undefined : 0}
+                            value={item.unitPrice}
+                            placeholder={item.lineType === "custom" ? "e.g. -50 for credit" : undefined}
+                            title={
+                              item.lineType === "custom"
+                                ? "Negative unit price or qty reduces the quote total (credit line)"
+                                : undefined
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                                e.preventDefault();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              updateItem(index, { unitPrice: Number.isFinite(n) ? n : 0 });
+                            }}
+                          />
+                        </td>
+                      </>
+                    )}
+                    <td className="right">{currency(item.lineTotal)}</td>
                   </tr>
-                ) : null}
+                  {item.lineType !== "custom" && lineItemOptions[item.id]?.expanded ? (
+                    <tr>
+                      <td colSpan={5} style={{ background: "#f8fafc", borderTop: "none", padding: 10 }}>
+                        <div
+                          style={{
+                            border: "1px solid #d1d5db",
+                            borderRadius: 6,
+                            padding: 10,
+                            background: "#fff",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Options</div>
+                          {lineItemOptions[item.id]?.error ? (
+                            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                              {lineItemOptions[item.id]?.error}
+                            </div>
+                          ) : null}
+                          <div
+                            style={{
+                              border: "1px solid #e5e7eb",
+                              borderRadius: 6,
+                              overflow: "hidden",
+                              textAlign: "left",
+                            }}
+                          >
+                            {(lineItemOptions[item.id]?.options ?? []).map((option, optionIndex) => {
+                              const checkboxId = `opt_${item.id}_${option}`;
+                              return (
+                                <label
+                                  key={option}
+                                  htmlFor={checkboxId}
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "28px 1fr",
+                                    alignItems: "start",
+                                    gap: 6,
+                                    padding: "7px 10px",
+                                    background: optionIndex % 2 === 0 ? "#ffffff" : "#f8fafc",
+                                    borderBottom:
+                                      optionIndex === (lineItemOptions[item.id]?.options?.length ?? 1) - 1
+                                        ? "none"
+                                        : "1px solid #edf2f7",
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  <input
+                                    id={checkboxId}
+                                    type="checkbox"
+                                    checked={(lineItemOptions[item.id]?.selected ?? []).includes(option)}
+                                    onChange={() => toggleOptionSelection(index, item.id, option)}
+                                    style={{ marginTop: 2, justifySelf: "center" }}
+                                  />
+                                  <span>{option}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{ padding: "4px 8px", fontSize: 12 }}
+                              onClick={() => applySelectedOptionsToDescription(index, item)}
+                              disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
+                            >
+                              Apply Selected
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{ padding: "4px 8px", fontSize: 12 }}
+                              onClick={() => clearSelectedOptions(index, item.id)}
+                              disabled={(lineItemOptions[item.id]?.selected?.length ?? 0) === 0}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
                 </Fragment>
               ))}
             </tbody>

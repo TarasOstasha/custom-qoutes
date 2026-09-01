@@ -6,6 +6,7 @@ import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import { formatQuoteLineDescription } from "../../lib/formatQuoteLineDescription";
 import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
+import { formatCustomerInfoBlock } from "../../lib/customerInfo";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuotePreservingTaxRate } from "../../lib/recalcQuote";
@@ -82,13 +83,7 @@ export default function QuotePreviewPage() {
 
 
           <div style={{ maxWidth: 260, justifySelf: "center", paddingTop: 36 }}>
-            <div>{quote.customerName || "—"}</div>
-            <div>{quote.customerCompany || ""}</div>
-            {quote.customerAddress ? (
-              <div style={{ whiteSpace: "pre-line" }}>{quote.customerAddress}</div>
-            ) : null}
-            <div>{quote.customerEmail || ""}</div>
-            {quote.customerPhone ? <div>{quote.customerPhone}</div> : null}
+            <div style={{ whiteSpace: "pre-line" }}>{formatCustomerInfoBlock(quote) || "—"}</div>
           </div>
 
 

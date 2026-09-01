@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { getApiBase } from "./apiBase";
+import { formatCustomerInfoBlock } from "./customerInfo";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -199,7 +200,20 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
 
   const toBlockStart = row;
 
-  ws.mergeCells(`C${toBlockStart}:E${toBlockStart + 3}`);
+  row += 1;
+
+  const customerBlock = formatCustomerInfoBlock(quote) || "—";
+  const customerLines = customerBlock.split(/\r?\n/).filter((line) => line.trim());
+  const customerRowCount = Math.max(4, customerLines.length);
+  ws.mergeCells(`A${row}:B${row + customerRowCount - 1}`);
+  const customerCell = ws.getCell(`A${row}`);
+  customerCell.value = customerBlock;
+  customerCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+  for (let i = 0; i < customerRowCount; i += 1) {
+    ws.getRow(row + i).height = 18;
+  }
+
+  ws.mergeCells(`C${toBlockStart}:E${toBlockStart + customerRowCount}`);
   const galleryCell = ws.getCell(`C${toBlockStart}`);
   galleryCell.value = "Product images";
   galleryCell.alignment = {
@@ -208,20 +222,7 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
     wrapText: true,
   };
 
-  row += 1;
-
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = quote.customerName ?? "—";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = quote.customerCompany ?? "";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = quote.customerEmail ?? "";
-  row += 1;
-  ws.mergeCells(`A${row}:B${row}`);
-  ws.getCell(`A${row}`).value = quote.customerPhone ?? "";
-  row += 1;
+  row += customerRowCount;
 
   // PRODUCT IMAGES
   const galleryUrls = quote.items

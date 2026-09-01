@@ -1,4 +1,5 @@
 import type { CartPayload, CartShippingOption } from "./extractCartFromPage";
+import { formatShippingDestination } from "./shippingDestination";
 
 /** Manual builder option — always rendered last in the shipping dropdown. */
 export const CUSTOM_SHIPPING_METHOD_VALUE = "6";
@@ -131,7 +132,9 @@ export function formatShippingRowAnnotation(quote: ShippingRowQuote): string | n
 /** Left-column shipping label for preview / PDF / Excel totals. */
 export function formatShippingTotalLabel(quote: ShippingRowQuote): string {
   const method = formatShippingRowAnnotation(quote);
-  return method ? `Shipping ${method}` : "Shipping";
+  const dest = formatShippingDestination(quote.shippingState, quote.shippingZip);
+  const base = method ? `Shipping ${method}` : "Shipping";
+  return dest ? `${base} (${dest})` : base;
 }
 
 export function findCartShippingOption(

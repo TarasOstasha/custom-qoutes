@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getApiBase } from "./apiBase";
+import { formatCustomerInfoBlock } from "./customerInfo";
 import type { Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -205,44 +206,30 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     align: "center",
   });
 
-  // bottom line stays same
-  const headerBottom = Math.max(yLeft, metaY + metaH) + 14;
-  doc.setDrawColor(209, 213, 219);
-  doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
-
-  // TO section
+  // TO section (drawn before header line so tall customer blocks push content down)
   const toX = pageWidth / 2 - 70;
   const toY = 44;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  // doc.text("TO", toX, toY, { align: "center" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   let yTo = toY + 18;
-  doc.text(quote.customerName || "—", toX, yTo, { align: "left" });
-  yTo += 14;
-  if (quote.customerCompany?.trim()) {
-    doc.text(quote.customerCompany, toX, yTo, { align: "left" });
+  const customerLines = formatCustomerInfoBlock(quote)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (customerLines.length === 0) {
+    doc.text("—", toX, yTo, { align: "left" });
     yTo += 14;
-  }
-  if (quote.customerAddress?.trim()) {
-    const addressLines = String(quote.customerAddress)
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    addressLines.forEach((line) => {
+  } else {
+    customerLines.forEach((line) => {
       doc.text(line, toX, yTo, { align: "left" });
       yTo += 14;
     });
   }
-  if (quote.customerEmail?.trim()) {
-    doc.text(quote.customerEmail, toX, yTo, { align: "left" });
-    yTo += 14;
-  }
-  if (quote.customerPhone?.trim()) {
-    doc.text(quote.customerPhone, toX, yTo, { align: "left" });
-    yTo += 14;
-  }
+
+  // Extra clearance so the rule sits below customer email descenders
+  const headerBottom = Math.max(yLeft, metaY + metaH, yTo) + 20;
+  doc.setDrawColor(209, 213, 219);
+  doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
 
   // PRDUCT IMAGES
   // const galleryX = margin;

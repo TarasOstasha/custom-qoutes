@@ -25,7 +25,8 @@ npm run electron:dist - build a new one
 *** Office LAN (netgear35)
 
 NAS: \\192.168.1.155\home
-
+account: OfficeNAS
+pass: 
 
 
 *** Remote via Tailscale
