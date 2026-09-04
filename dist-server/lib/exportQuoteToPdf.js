@@ -7,8 +7,10 @@ exports.exportQuoteToPdf = exportQuoteToPdf;
 const jspdf_1 = __importDefault(require("jspdf"));
 const jspdf_autotable_1 = __importDefault(require("jspdf-autotable"));
 const apiBase_1 = require("./apiBase");
+const customerInfo_1 = require("./customerInfo");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
 const quoteDiscount_1 = require("./quoteDiscount");
+const quoteItemImages_1 = require("./quoteItemImages");
 const shippingMethod_1 = require("./shippingMethod");
 const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
@@ -94,6 +96,44 @@ async function loadLogoDataUrl() {
     }
     return null;
 }
+function isUploadedImageUrl(url) {
+    return /\/api\/uploads\//i.test(url);
+}
+function getDataUrlDimensions(dataUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = dataUrl;
+    });
+}
+/** object-fit: contain within a fixed box, centered. */
+function containFitRect(naturalW, naturalH, boxW, boxH) {
+    if (naturalW <= 0 || naturalH <= 0) {
+        return { offsetX: 0, offsetY: 0, drawW: boxW, drawH: boxH };
+    }
+    const scale = Math.min(boxW / naturalW, boxH / naturalH);
+    const drawW = naturalW * scale;
+    const drawH = naturalH * scale;
+    return {
+        offsetX: (boxW - drawW) / 2,
+        offsetY: (boxH - drawH) / 2,
+        drawW,
+        drawH,
+    };
+}
+/** Empty gallery slots to the right of `colIndex` in the same row (for wider upload contain). */
+function trailingEmptySlotsInRow(colIndex, rowIndex, imageCount, perRow) {
+    const rowStart = rowIndex * perRow;
+    const rowEnd = Math.min(rowStart + perRow, imageCount);
+    let span = 1;
+    for (let col = colIndex + 1; col < perRow; col++) {
+        if (rowStart + col < rowEnd)
+            break;
+        span++;
+    }
+    return span;
+}
 async function loadImageDataUrl(src) {
     try {
         const res = await fetch(src);
@@ -175,43 +215,30 @@ async function exportQuoteToPdf(quote) {
     doc.text(quote.quoteDate || "—", metaX + metaW * 0.75, valueY, {
         align: "center",
     });
-    // bottom line stays same
-    const headerBottom = Math.max(yLeft, metaY + metaH) + 14;
-    doc.setDrawColor(209, 213, 219);
-    doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
-    // TO section
+    // TO section (drawn before header line so tall customer blocks push content down)
     const toX = pageWidth / 2 - 70;
     const toY = 44;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    // doc.text("TO", toX, toY, { align: "center" });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     let yTo = toY + 18;
-    doc.text(quote.customerName || "—", toX, yTo, { align: "left" });
-    yTo += 14;
-    if (quote.customerCompany?.trim()) {
-        doc.text(quote.customerCompany, toX, yTo, { align: "left" });
+    const customerLines = (0, customerInfo_1.formatCustomerInfoBlock)(quote)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (customerLines.length === 0) {
+        doc.text("—", toX, yTo, { align: "left" });
         yTo += 14;
     }
-    if (quote.customerAddress?.trim()) {
-        const addressLines = String(quote.customerAddress)
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean);
-        addressLines.forEach((line) => {
+    else {
+        customerLines.forEach((line) => {
             doc.text(line, toX, yTo, { align: "left" });
             yTo += 14;
         });
     }
-    if (quote.customerEmail?.trim()) {
-        doc.text(quote.customerEmail, toX, yTo, { align: "left" });
-        yTo += 14;
-    }
-    if (quote.customerPhone?.trim()) {
-        doc.text(quote.customerPhone, toX, yTo, { align: "left" });
-        yTo += 14;
-    }
+    // Extra clearance so the rule sits below customer email descenders
+    const headerBottom = Math.max(yLeft, metaY + metaH, yTo) + 20;
+    doc.setDrawColor(209, 213, 219);
+    doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
     // PRDUCT IMAGES
     // const galleryX = margin;
     // const galleryY = Math.max(headerBottom + 12, yTo + 8);
@@ -244,7 +271,8 @@ async function exportQuoteToPdf(quote) {
     const galleryY = Math.max(headerBottom + 12, yTo + 8);
     const galleryW = pageWidth - 2 * margin;
     const galleryUrls = quote.items
-        .map((i) => (0, normalizeProductImageUrl_1.normalizeProductImageUrl)(i.imageUrl) ?? i.imageUrl ?? "")
+        .flatMap((i) => (0, quoteItemImages_1.getQuoteItemImageUrls)(i))
+        .map((url) => (0, normalizeProductImageUrl_1.normalizeProductImageUrl)(url) ?? url)
         .filter(Boolean);
     const pad = 10;
     const gap = 10;
@@ -258,17 +286,37 @@ async function exportQuoteToPdf(quote) {
     doc.setDrawColor(209, 213, 219);
     doc.rect(galleryX, galleryY, galleryW, galleryH);
     if (galleryUrls.length > 0) {
-        const imageData = await Promise.all(galleryUrls.map((u) => loadImageDataUrl(u)));
-        const loaded = imageData.filter((d) => Boolean(d));
+        const imageEntries = await Promise.all(galleryUrls.map(async (url) => ({
+            url,
+            dataUrl: await loadImageDataUrl(url),
+        })));
+        const loaded = imageEntries.filter((entry) => Boolean(entry.dataUrl));
         if (loaded.length > 0) {
-            loaded.forEach((dataUrl, i) => {
+            for (let i = 0; i < loaded.length; i++) {
+                const { url, dataUrl } = loaded[i];
                 const rowIndex = Math.floor(i / perRow);
                 const colIndex = i % perRow;
-                const x = galleryX + pad + colIndex * (slotW + gap);
-                const y = galleryY + 14 + rowIndex * (imgH + rowGap);
+                const boxX = galleryX + pad + colIndex * (slotW + gap);
+                const boxY = galleryY + 14 + rowIndex * (imgH + rowGap);
                 const format = /^data:image\/jpe?g/i.test(dataUrl) ? "JPEG" : "PNG";
-                doc.addImage(dataUrl, format, x, y, imgW, imgH, undefined, "FAST");
-            });
+                if (isUploadedImageUrl(url)) {
+                    try {
+                        const { width, height } = await getDataUrlDimensions(dataUrl);
+                        const span = width > height
+                            ? trailingEmptySlotsInRow(colIndex, rowIndex, loaded.length, perRow)
+                            : 1;
+                        const uploadBoxW = span * slotW + (span - 1) * gap;
+                        const fit = containFitRect(width, height, uploadBoxW, imgH);
+                        doc.addImage(dataUrl, format, boxX + fit.offsetX, boxY + fit.offsetY, fit.drawW, fit.drawH, undefined, "FAST");
+                    }
+                    catch {
+                        doc.addImage(dataUrl, format, boxX, boxY, imgW, imgH, undefined, "FAST");
+                    }
+                }
+                else {
+                    doc.addImage(dataUrl, format, boxX, boxY, imgW, imgH, undefined, "FAST");
+                }
+            }
         }
     }
     const tableStartY = galleryY + galleryH + 12;
@@ -338,9 +386,24 @@ async function exportQuoteToPdf(quote) {
     doc.setDrawColor(209, 213, 219);
     doc.line(margin, notesY, pageWidth - margin, notesY);
     doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
     doc.text("NOTES:", margin, notesY + 18);
     doc.setFont("helvetica", "normal");
-    doc.text(quote.notes || "—", margin, notesY + 36);
+    doc.setFontSize(11);
+    const notesMaxWidth = pageWidth - margin * 2;
+    const notesLineHeight = 14;
+    const notesBottomLimit = pageHeight - 40;
+    const notesText = (quote.notes || "—").trim() || "—";
+    const notesLines = doc.splitTextToSize(notesText, notesMaxWidth);
+    let noteLineY = notesY + 36;
+    for (const line of notesLines) {
+        if (noteLineY > notesBottomLimit) {
+            doc.addPage();
+            noteLineY = margin + 18;
+        }
+        doc.text(line, margin, noteLineY);
+        noteLineY += notesLineHeight;
+    }
     doc.setFontSize(11);
     doc.setTextColor(107, 114, 128);
     doc.text("Estimate Valid For 30 Days", pageWidth / 2, pageHeight - 24, {

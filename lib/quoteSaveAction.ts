@@ -57,6 +57,7 @@ export function mapQuoteItemsForCreate(
     unitPrice: number;
     lineTotal: number;
     chosenOptions?: string[] | null;
+    availableOptions?: string[] | null;
     importLineId?: string | null;
   }>,
 ) {
@@ -74,11 +75,13 @@ export function mapQuoteItemsForCreate(
       amount: Number(item.lineTotal),
       options_json:
         item.chosenOptions?.length ||
+        item.availableOptions?.length ||
         item.imageUrl ||
         extraImageUrls.length ||
         item.importLineId
           ? {
               ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+              ...(item.availableOptions?.length ? { available_options: item.availableOptions } : {}),
               ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
               ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
               ...(item.importLineId ? { import_line_id: item.importLineId } : {}),

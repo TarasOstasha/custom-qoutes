@@ -1,5 +1,5 @@
 /**
- * CLI: scrape Volusion ShoppingCart.asp using the persistent Chromium profile
+ * CLI: scrape Volusion ShoppingCart.php using the persistent Chromium profile
  * (VOLUSION_PLAYWRIGHT_USER_DATA_DIR). No cookies are passed on the command line.
  *
  *   npx ts-node scripts/scrapeCart.ts

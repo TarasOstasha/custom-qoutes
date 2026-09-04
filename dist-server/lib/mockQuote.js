@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mockQuote = void 0;
+exports.defaultQuoteNumberFromDate = defaultQuoteNumberFromDate;
 exports.createEmptyQuote = createEmptyQuote;
 const now = new Date().toISOString();
 exports.mockQuote = {
@@ -93,12 +94,18 @@ exports.mockQuote = {
         },
     ],
 };
+/** Default Quote # from the quote date field (e.g. `Quote 8/31/2026`). */
+function defaultQuoteNumberFromDate(quoteDate) {
+    const date = quoteDate.trim() || new Date().toLocaleDateString("en-US");
+    return `Quote ${date}`;
+}
 /** Fresh quote for builder / after clearing stored draft. */
 function createEmptyQuote() {
     const t = new Date().toISOString();
+    const quoteDate = new Date().toLocaleDateString("en-US");
     return {
         id: "q_draft",
-        quoteNumber: "EX260127A",
+        quoteNumber: defaultQuoteNumberFromDate(quoteDate),
         status: "draft",
         version: 1,
         customerName: null,
@@ -123,6 +130,6 @@ function createEmptyQuote() {
         items: [],
         createdAt: t,
         updatedAt: t,
-        quoteDate: new Date().toLocaleDateString("en-US"),
+        quoteDate,
     };
 }

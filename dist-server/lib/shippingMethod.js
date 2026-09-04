@@ -19,6 +19,7 @@ exports.resolveShippingMethodFromShippingOptions = resolveShippingMethodFromShip
 exports.resolveEffectiveShippingMethod = resolveEffectiveShippingMethod;
 exports.resolveShippingMethodFromCartPayload = resolveShippingMethodFromCartPayload;
 exports.cartPayloadHasShippingChoice = cartPayloadHasShippingChoice;
+const shippingDestination_1 = require("./shippingDestination");
 /** Manual builder option — always rendered last in the shipping dropdown. */
 exports.CUSTOM_SHIPPING_METHOD_VALUE = "6";
 /** Static builder options (cart-imported methods are inserted before Custom). */
@@ -120,7 +121,9 @@ function formatShippingRowAnnotation(quote) {
 /** Left-column shipping label for preview / PDF / Excel totals. */
 function formatShippingTotalLabel(quote) {
     const method = formatShippingRowAnnotation(quote);
-    return method ? `Shipping ${method}` : "Shipping";
+    const dest = (0, shippingDestination_1.formatShippingDestination)(quote.shippingState, quote.shippingZip);
+    const base = method ? `Shipping ${method}` : "Shipping";
+    return dest ? `${base} (${dest})` : base;
 }
 function findCartShippingOption(cartOptions, value) {
     if (!value)

@@ -13,6 +13,8 @@ export type CartItemRow = {
   lineTotal: number;
   imageUrl?: string;
   options?: string[];
+  /** Help_CartItemDetails.asp or .php path used to load the options popup. */
+  optionsPopupPath?: string;
 };
 
 export type CartShippingOption = {
@@ -172,16 +174,75 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     return String(text ?? "").replace(/\s+/g, " ").trim();
   }
 
-  function popupDetailsPathFromAnchor(anchor: HTMLAnchorElement | null): string {
+  function lineCartIdFromProductLinks(scope: ParentNode | null | undefined): string {
+    if (!scope) return "";
+    const links = Array.from(
+      scope.querySelectorAll('a[href*="ProductCode"], a[href*="productcode"], a[href*="ProductDetails"]'),
+    ) as HTMLAnchorElement[];
+    for (const link of links) {
+      const href = (link.getAttribute("href") ?? "").replace(/&amp;/g, "&");
+      try {
+        const url = new URL(href, window.location.href);
+        const cartId =
+          url.searchParams.get("CartID")?.trim() ||
+          url.searchParams.get("CartId")?.trim() ||
+          url.searchParams.get("cartid")?.trim() ||
+          "";
+        if (cartId) return cartId;
+      } catch {
+        const match = href.match(/[?&]CartID=([^&]+)/i);
+        if (match?.[1]) return decodeURIComponent(match[1]);
+      }
+    }
+    return "";
+  }
+
+  function popupDetailsPathFromAnchor(
+    anchor: HTMLAnchorElement | null,
+    row?: HTMLTableRowElement | null,
+  ): string {
     if (!anchor) return "";
     const hrefRaw = anchor.getAttribute("href") ?? "";
     const onclickRaw = anchor.getAttribute("onclick") ?? "";
-    const raw = [hrefRaw, onclickRaw].find((x) => /Help_CartItemDetails\.asp/i.test(x)) ?? "";
-    if (!raw) return "";
-    const openWindowMatch = raw.match(/OpenNewWindow\(\s*['"]([^'"]+)['"]/i);
-    const directPathMatch = raw.match(/(Help_CartItemDetails\.asp\?[^'"\s)]+)/i);
-    const path = openWindowMatch?.[1] ?? directPathMatch?.[1] ?? "";
-    return path.trim();
+    const combined = `${hrefRaw} ${onclickRaw}`;
+    const raw =
+      [hrefRaw, onclickRaw, combined].find((x) => /Help_CartItemDetails\.(?:asp|php)/i.test(x)) ?? "";
+    if (raw) {
+      const decoded = raw.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      const openWindowMatch = decoded.match(/OpenNewWindow\(\s*['"]([^'"]+)['"]/i);
+      const directPathMatch = decoded.match(/(Help_CartItemDetails\.(?:asp|php)(?:\?[^'"\s)]*)?)/i);
+      const path = (openWindowMatch?.[1] ?? directPathMatch?.[1] ?? "").replace(/&amp;/g, "&");
+      if (path.trim()) return path.trim();
+    }
+
+    // Newer Volusion themes use javascript:void(0) and JS loads Help_CartItemDetails.php?CartID=<line>.
+    // The line id lives on the nearby ProductDetails.php?ProductCode=...&CartID=N link in the same cell.
+    const looksLikeOptionsLink = /view list of options/i.test(
+      `${anchor.getAttribute("title") ?? ""} ${anchor.textContent ?? ""}`,
+    );
+    if (!looksLikeOptionsLink && !/javascript:\s*void\s*\(\s*0\s*\)/i.test(hrefRaw)) return "";
+
+    const sameCell = anchor.closest("td");
+    const scope: ParentNode | null =
+      sameCell ??
+      row ??
+      (anchor.closest("tr") as HTMLTableRowElement | null);
+    const lineCartId = lineCartIdFromProductLinks(scope);
+    if (lineCartId) return `Help_CartItemDetails.php?CartID=${encodeURIComponent(lineCartId)}`;
+
+    const qtyScope = (row as ParentNode | null) ?? scope;
+    const qtyInput = qtyScope?.querySelector(
+      'input[id^="Quantity"], input[name^="Quantity"], input[id*="Quantity"], input[name*="Quantity"]',
+    ) as HTMLInputElement | null;
+    if (qtyInput) {
+      const idName = `${qtyInput.id ?? ""} ${qtyInput.name ?? ""}`;
+      const suffixMatch = idName.match(/(?:Quantity|quantity)[_\-]?(\d+)/i);
+      if (suffixMatch?.[1]) {
+        return `Help_CartItemDetails.php?CartID=${encodeURIComponent(suffixMatch[1])}`;
+      }
+    }
+
+    return "";
   }
 
   function cartLineIdFromRow(
@@ -195,7 +256,18 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     if (popupPath) {
       try {
         const popupUrl = new URL(popupPath, window.location.href);
-        for (const key of ["CartItemID", "CartItemId", "cartitemid", "ID", "Id", "ItemID", "itemid"]) {
+        for (const key of [
+          "CartItemID",
+          "CartItemId",
+          "cartitemid",
+          "CartID",
+          "CartId",
+          "cartid",
+          "ID",
+          "Id",
+          "ItemID",
+          "itemid",
+        ]) {
           const value = popupUrl.searchParams.get(key)?.trim();
           if (value) {
             const priceKey = Math.round(unitPrice * 100);
@@ -240,8 +312,12 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
 
   function findOptionsAnchorInRow(tr: HTMLTableRowElement): HTMLAnchorElement | null {
     const directSelectors = [
+      'a[href*="Help_CartItemDetails.php"]',
       'a[href*="Help_CartItemDetails.asp"]',
+      'a[onclick*="Help_CartItemDetails.php"]',
       'a[onclick*="Help_CartItemDetails.asp"]',
+      'a[href*="Help_CartItemDetails"]',
+      'a[onclick*="Help_CartItemDetails"]',
       'a[title*="View list of options"]',
     ];
     for (const selector of directSelectors) {
@@ -254,8 +330,13 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     ) as HTMLAnchorElement[];
     for (const el of openWindowLinks) {
       const raw = `${el.getAttribute("href") ?? ""} ${el.getAttribute("onclick") ?? ""}`;
-      if (/Help_CartItemDetails\.asp/i.test(raw)) return el;
+      if (/Help_CartItemDetails\.(?:asp|php)/i.test(raw)) return el;
     }
+
+    const byLabel = Array.from(tr.querySelectorAll("a")).find((el) =>
+      /view list of options/i.test(`${el.getAttribute("title") ?? ""} ${el.textContent ?? ""}`),
+    ) as HTMLAnchorElement | undefined;
+    if (byLabel) return byLabel;
 
     return null;
   }
@@ -289,10 +370,11 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
     for (let i = rowIndex + 1; i < Math.min(rows.length, rowIndex + 5); i += 1) {
       const next = rows[i];
       if (!next) break;
+      // Option sub-rows repeat product name/links — stop before the next priced cart line
+      // so we do not steal that line's "View list of options" link.
+      if (isNextCartLineRow(next)) break;
       const candidate = findOptionsAnchorInRow(next);
       if (candidate) return candidate;
-      // Option sub-rows repeat product name/links — only stop at the next priced cart line.
-      if (isNextCartLineRow(next)) break;
     }
     return null;
   }
@@ -314,51 +396,75 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       const options: string[] = [];
       const seen = new Set<string>();
       const rawBodyText = popupDoc.body?.textContent ?? "";
+      const rawBodyHtml = popupDoc.body?.innerHTML ?? "";
+
+      const linesFromHtml = (html: string): string[] => {
+        const withBreaks = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/(p|div|li|tr|h[1-6]|td|blockquote)>/gi, "\n")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/&amp;/gi, "&")
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'");
+        return withBreaks
+          .split(/\r?\n+/)
+          .map((line) => normalizeText(line))
+          .filter(Boolean);
+      };
+
+      const parseOptionLines = (lines: string[]): string[] => {
+        const parsed: string[] = [];
+        for (const rawLine of lines) {
+          if (/^your options for\s*:/i.test(rawLine)) continue;
+          if (/^item\s*(name|price)\s*:?/i.test(rawLine)) {
+            if (parsed.length) break;
+            continue;
+          }
+          const line = rawLine.replace(/^(your\s+)?options(\s+for)?\s*:\s*/i, "").trim();
+          if (!line || /^options$/i.test(line)) continue;
+          const pairMatch = line.match(/^([^:]{1,80})\s*:\s*(.+)$/);
+          if (pairMatch) {
+            const label = normalizeText(pairMatch[1] ?? "");
+            const value = normalizeText(pairMatch[2] ?? "");
+            if (/^your options for$/i.test(label)) continue;
+            if (/^item\s*(name|price)$/i.test(label)) continue;
+            if (label && value) {
+              parsed.push(`${label}: ${value}`);
+              continue;
+            }
+          }
+          if (parsed.length > 0 && !/^options$/i.test(rawLine)) {
+            const last = parsed[parsed.length - 1] ?? "";
+            parsed[parsed.length - 1] = `${last} ${line}`.trim();
+          }
+        }
+        return parsed;
+      };
 
       const extractFromOptionsSection = (rawText: string): string[] => {
         const lines = rawText
           .split(/\r?\n+/)
           .map((line) => line.trim())
           .filter(Boolean);
-        const startIndex = lines.findIndex((line) => /^options\s*:?/i.test(line));
+        const startIndex = lines.findIndex((line) => /^(your\s+)?options(\s+for)?\s*:?/i.test(line));
         if (startIndex < 0) return [];
-
-        const sectionLines: string[] = [];
-        for (let i = startIndex; i < lines.length; i += 1) {
-          const line = lines[i] ?? "";
-          if (i > startIndex && /^item\s*(name|price)\s*:?/i.test(line)) break;
-          sectionLines.push(line);
-        }
-
-        const parsed: string[] = [];
-        for (const rawLine of sectionLines) {
-          const line = rawLine.replace(/^options\s*:\s*/i, "").trim();
-          if (!line) continue;
-          const pairMatch = line.match(/^([^:]{1,80})\s*:\s*(.+)$/);
-          if (pairMatch) {
-            const label = normalizeText(pairMatch[1] ?? "");
-            const value = normalizeText(pairMatch[2] ?? "");
-            if (label && value) {
-              parsed.push(`${label}: ${value}`);
-              continue;
-            }
-          }
-          if (parsed.length > 0) {
-            const last = parsed[parsed.length - 1] ?? "";
-            parsed[parsed.length - 1] = `${last} ${line}`.trim();
-          } else {
-            parsed.push(line);
-          }
-        }
-        return parsed;
+        return parseOptionLines(lines.slice(startIndex));
       };
 
-      const optionsFromSection = extractFromOptionsSection(rawBodyText);
-      optionsFromSection.forEach((opt) => {
-        if (!opt || seen.has(opt)) return;
-        seen.add(opt);
-        options.push(opt);
-      });
+      const addOptions = (list: string[]) => {
+        list.forEach((opt) => {
+          if (!opt || seen.has(opt)) return;
+          seen.add(opt);
+          options.push(opt);
+        });
+      };
+
+      addOptions(extractFromOptionsSection(rawBodyText));
+      if (options.length > 0) return options;
+      addOptions(parseOptionLines(linesFromHtml(rawBodyHtml)));
       if (options.length > 0) return options;
 
       const rows = Array.from(popupDoc.querySelectorAll("tr"));
@@ -448,6 +554,8 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       const nameEl =
         tr.querySelector(".cart-item-name") ??
         tr.querySelector('td a[href*="Product"]') ??
+        tr.querySelector('td a[href*="ProductDetails"]') ??
+        tr.querySelector('td a[href*=".php"]') ??
         tr.querySelector('td a[href*=".asp"]');
 
       const link =
@@ -508,7 +616,18 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       const abs = imageUrl ? toAbsoluteUrl(imageUrl) : undefined;
 
       const optionsAnchor = findOptionsAnchorNearRow(rowList, rowIndex);
-      const popupPath = popupDetailsPathFromAnchor(optionsAnchor);
+      let popupPath = popupDetailsPathFromAnchor(optionsAnchor, tr as HTMLTableRowElement);
+      if (!popupPath) {
+        // Kit/theme rows sometimes expose CartID on the product link even when the
+        // options anchor is javascript:void(0) without an inline Help_* URL.
+        const lineCartId = lineCartIdFromProductLinks(tr);
+        const hasOptionsCue =
+          Boolean(optionsAnchor) ||
+          /view list of options/i.test(tr.textContent ?? "");
+        if (lineCartId && hasOptionsCue) {
+          popupPath = `Help_CartItemDetails.php?CartID=${encodeURIComponent(lineCartId)}`;
+        }
+      }
       const cartLineId = cartLineIdFromRow(
         tr as HTMLTableRowElement,
         popupPath,
@@ -539,6 +658,7 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
         lineTotal,
         ...(abs ? { imageUrl: abs } : {}),
         ...(options.length ? { options } : {}),
+        ...(popupPath ? { optionsPopupPath: popupPath } : {}),
       });
     }
   }
@@ -555,6 +675,8 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
       const nameEl =
         tr.querySelector(".cart-item-name") ??
         tr.querySelector('td a[href*="Product"]') ??
+        tr.querySelector('td a[href*="ProductDetails"]') ??
+        tr.querySelector('td a[href*=".php"]') ??
         tr.querySelector('td a[href*=".asp"]');
       const link =
         (tr.querySelector('a[href*="ProductCode"]') as HTMLAnchorElement | null) ??
@@ -924,7 +1046,7 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
 }
 
 /**
- * Parses Volusion ShoppingCart.asp in the current browser tab (same origin as cart).
+ * Parses Volusion ShoppingCart.php/.asp in the current browser tab (same origin as cart).
  */
 export function normalizeCartPayloadImages(payload: CartPayload): CartPayload {
   const normalized: CartPayload = {

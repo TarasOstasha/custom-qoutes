@@ -6,25 +6,26 @@ export function formatCustomerInfoBlock(quote: {
   customerPhone?: string | null;
   customerAddress?: string | null;
 }): string {
-  const address = (quote.customerAddress ?? "").replace(/\r\n/g, "\n").trim();
+  const rawAddress = (quote.customerAddress ?? "").replace(/\r\n/g, "\n");
   const name = (quote.customerName ?? "").trim();
   const company = (quote.customerCompany ?? "").trim();
   const email = (quote.customerEmail ?? "").trim();
   const phone = (quote.customerPhone ?? "").trim();
 
-  const addressLines = address
+  const addressLines = rawAddress
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
-  // New workflow: paste everything into the address/customer block.
-  if (address && !name && !company && !email && !phone) {
-    return addressLines.join("\n");
-  }
-
-  // Multi-line paste already stored in address — prefer it.
-  if (addressLines.length >= 3) {
-    return addressLines.join("\n");
+  // Pasted / single-block workflow: full text in customerAddress; other fields cleared.
+  if (
+    rawAddress &&
+    !company &&
+    !email &&
+    !phone &&
+    (!name || addressLines[0] === name)
+  ) {
+    return rawAddress;
   }
 
   // Legacy quotes with separate fields.
@@ -46,15 +47,15 @@ export function customerInfoFromPaste(text: string): {
   customerPhone: null;
 } {
   const normalized = text.replace(/\r\n/g, "\n");
-  const trimmed = normalized.trim();
   const firstLine =
-    trimmed
+    normalized
+      .trim()
       .split("\n")
       .map((line) => line.trim())
       .find(Boolean) ?? null;
 
   return {
-    customerAddress: trimmed || null,
+    customerAddress: normalized.trim() ? normalized : null,
     customerName: firstLine,
     customerCompany: null,
     customerEmail: null,

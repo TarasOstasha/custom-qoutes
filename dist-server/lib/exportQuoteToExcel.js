@@ -6,8 +6,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportQuoteToExcel = exportQuoteToExcel;
 const exceljs_1 = __importDefault(require("exceljs"));
 const apiBase_1 = require("./apiBase");
+const customerInfo_1 = require("./customerInfo");
 const normalizeProductImageUrl_1 = require("./normalizeProductImageUrl");
 const quoteDiscount_1 = require("./quoteDiscount");
+const quoteItemImages_1 = require("./quoteItemImages");
 const shippingMethod_1 = require("./shippingMethod");
 const taxLabel_1 = require("./taxLabel");
 function safeFilenamePart(s) {
@@ -179,7 +181,18 @@ async function exportQuoteToExcel(quote) {
     ws.getCell(`A${row}`).value = "TO";
     ws.getCell(`A${row}`).font = { bold: true };
     const toBlockStart = row;
-    ws.mergeCells(`C${toBlockStart}:E${toBlockStart + 3}`);
+    row += 1;
+    const customerBlock = (0, customerInfo_1.formatCustomerInfoBlock)(quote) || "—";
+    const customerLines = customerBlock.split(/\r?\n/).filter((line) => line.trim());
+    const customerRowCount = Math.max(4, customerLines.length);
+    ws.mergeCells(`A${row}:B${row + customerRowCount - 1}`);
+    const customerCell = ws.getCell(`A${row}`);
+    customerCell.value = customerBlock;
+    customerCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+    for (let i = 0; i < customerRowCount; i += 1) {
+        ws.getRow(row + i).height = 18;
+    }
+    ws.mergeCells(`C${toBlockStart}:E${toBlockStart + customerRowCount}`);
     const galleryCell = ws.getCell(`C${toBlockStart}`);
     galleryCell.value = "Product images";
     galleryCell.alignment = {
@@ -187,22 +200,12 @@ async function exportQuoteToExcel(quote) {
         horizontal: "center",
         wrapText: true,
     };
-    row += 1;
-    ws.mergeCells(`A${row}:B${row}`);
-    ws.getCell(`A${row}`).value = quote.customerName ?? "—";
-    row += 1;
-    ws.mergeCells(`A${row}:B${row}`);
-    ws.getCell(`A${row}`).value = quote.customerCompany ?? "";
-    row += 1;
-    ws.mergeCells(`A${row}:B${row}`);
-    ws.getCell(`A${row}`).value = quote.customerEmail ?? "";
-    row += 1;
-    ws.mergeCells(`A${row}:B${row}`);
-    ws.getCell(`A${row}`).value = quote.customerPhone ?? "";
-    row += 1;
+    row += customerRowCount;
     // PRODUCT IMAGES
-    const galleryItems = quote.items.filter((i) => Boolean(i.imageUrl?.trim()));
-    const galleryUrls = galleryItems.map((i) => preferHighQualityImageUrl(i.imageUrl));
+    const galleryUrls = quote.items
+        .flatMap((i) => (0, quoteItemImages_1.getQuoteItemImageUrls)(i))
+        .map((url) => preferHighQualityImageUrl(url))
+        .filter(Boolean);
     const galleryResults = await Promise.all(galleryUrls.map((u) => (u ? fetchImageForExcel(u) : Promise.resolve(null))));
     const perRow = 5;
     const startCol = 2.1;

@@ -56,22 +56,55 @@ function todayQuoteDate(): string {
   return new Date().toLocaleDateString("en-US");
 }
 
+/** Parse calendar dates without UTC timezone shift (DATEONLY / YYYY-MM-DD). */
+function parseQuoteCalendarParts(
+  value: string | Date | null | undefined,
+): { y: number; m: number; d: number } | null {
+  if (value == null || value === "") return null;
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    // Sequelize DATEONLY / JSON ISO midnight is UTC — use UTC parts.
+    return {
+      y: value.getUTCFullYear(),
+      m: value.getUTCMonth() + 1,
+      d: value.getUTCDate(),
+    };
+  }
+
+  const trimmed = String(value).trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    return { y: Number(iso[1]), m: Number(iso[2]), d: Number(iso[3]) };
+  }
+  const us = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) {
+    return { y: Number(us[3]), m: Number(us[1]), d: Number(us[2]) };
+  }
+  return null;
+}
+
+function formatQuoteDateEnUs(parts: { y: number; m: number; d: number }): string {
+  return new Date(parts.y, parts.m - 1, parts.d).toLocaleDateString("en-US");
+}
+
 /** `quoteDate` is stored as en-US (e.g. `5/21/2026`); `<input type="date">` needs `YYYY-MM-DD`. */
 function quoteDateToInputValue(quoteDate: string): string {
-  const trimmed = quoteDate.trim();
-  const parsed = new Date(trimmed || todayQuoteDate());
-  if (Number.isNaN(parsed.getTime())) return "";
-  const y = parsed.getFullYear();
-  const m = String(parsed.getMonth() + 1).padStart(2, "0");
-  const d = String(parsed.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  const parts = parseQuoteCalendarParts(quoteDate) ?? parseQuoteCalendarParts(todayQuoteDate());
+  if (!parts) return "";
+  const m = String(parts.m).padStart(2, "0");
+  const d = String(parts.d).padStart(2, "0");
+  return `${parts.y}-${m}-${d}`;
 }
 
 function inputValueToQuoteDate(iso: string): string {
-  if (!iso) return todayQuoteDate();
-  const [y, m, d] = iso.split("-").map((v) => Number(v));
-  if (!y || !m || !d) return todayQuoteDate();
-  return new Date(y, m - 1, d).toLocaleDateString("en-US");
+  const parts = parseQuoteCalendarParts(iso);
+  return parts ? formatQuoteDateEnUs(parts) : todayQuoteDate();
+}
+
+function dbQuoteDateToQuoteDate(value: string | Date | null | undefined): string {
+  const parts = parseQuoteCalendarParts(value);
+  return parts ? formatQuoteDateEnUs(parts) : todayQuoteDate();
 }
 
 type LineItemOptionState = {
@@ -110,12 +143,14 @@ type ApiQuoteItem = {
   amount: number | string | null;
   optionsJson?: {
     chosen_options?: string[];
+    available_options?: string[];
     image_url?: string;
     extra_image_urls?: string[];
     import_line_id?: string;
   } | null;
   options_json?: {
     chosen_options?: string[];
+    available_options?: string[];
     image_url?: string;
     extra_image_urls?: string[];
     import_line_id?: string;
@@ -237,6 +272,7 @@ export default function QuoteBuilderPage() {
     () => recalcQuote(quote.items, { shippingTotal: quote.shippingTotal, taxTotal: quote.taxTotal }),
     [quote.items, quote.shippingTotal, quote.taxTotal]
   );
+  const canSaveQuote = quote.items.length > 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -550,34 +586,81 @@ export default function QuoteBuilderPage() {
     });
   };
 
-  const collectAvailableOptionsForItem = (item: QuoteItem): string[] => {
-    const payloadItems = lastCartPayload?.cartItems ?? [];
+  const collectAvailableOptionsForItem = (
+    item: QuoteItem,
+    payloadItems: CartPayload["cartItems"] = lastCartPayload?.cartItems ?? [],
+  ): string[] => {
+    if (item.availableOptions?.length) {
+      return item.availableOptions.map((option) => option.trim()).filter(Boolean);
+    }
     if (!payloadItems.length) {
       return item.chosenOptions?.length ? [...item.chosenOptions] : [];
     }
     return collectOptionsForCartLine(item, payloadItems);
   };
 
-  const getLineOptions = (item: QuoteItem) => {
+  const getLineOptions = async (item: QuoteItem) => {
     setLineItemOptions((prev) => ({
       ...prev,
       [item.id]: {
         loading: true,
         expanded: true,
         options: prev[item.id]?.options ?? [],
-        selected: prev[item.id]?.selected ?? [],
+        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
         error: null,
       },
     }));
 
-    const options = collectAvailableOptionsForItem(item);
+    let options = collectAvailableOptionsForItem(item);
+
+    // Older scrapes missed options after Volusion moved to javascript:void(0) popups.
+    // Re-scrape the live cart once so Get Options can show the checkbox list.
+    if (!options.length) {
+      setScrapeCartServerLoading(true);
+      try {
+        const response = await fetch(`${getApiBase()}/quotes/scrape-cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (response.ok) {
+          const data = (await response.json()) as CartPayload;
+          if (Array.isArray(data.cartItems) && data.cartItems.length) {
+            setLastCartPayload(data);
+            options = collectAvailableOptionsForItem(item, data.cartItems);
+
+            // Attach scraped options onto the quote line so Get Options keeps working
+            // even if lastCartPayload is cleared later.
+            if (options.length) {
+              setQuote((prev) => {
+                const items = prev.items.map((entry) =>
+                  entry.id === item.id
+                    ? {
+                        ...entry,
+                        availableOptions: options,
+                        updatedAt: new Date().toISOString(),
+                      }
+                    : entry,
+                );
+                return { ...prev, items };
+              });
+            }
+          }
+        }
+      } catch {
+        /* keep empty options / error below */
+      } finally {
+        setScrapeCartServerLoading(false);
+      }
+    }
+
     setLineItemOptions((prev) => ({
       ...prev,
       [item.id]: {
         loading: false,
         expanded: true,
         options,
-        selected: prev[item.id]?.selected ?? [],
+        selected: prev[item.id]?.selected ?? item.chosenOptions ?? [],
         error: options.length ? null : "No options found for this line item in the last cart scrape.",
       },
     }));
@@ -1196,6 +1279,10 @@ export default function QuoteBuilderPage() {
   };
 
   const createNewQuote = async () => {
+    if (!quote.items.length) {
+      setSaveQuoteError("Add at least one line item before saving.");
+      return;
+    }
     const quoteNum = normalizeQuoteNumber(quote.quoteNumber);
     if (!quoteNum) {
       setSaveQuoteError("Enter a quote number first.");
@@ -1228,6 +1315,10 @@ export default function QuoteBuilderPage() {
   };
 
   const saveQuote = async () => {
+    if (!quote.items.length) {
+      setSaveQuoteError("Add at least one line item before saving.");
+      return;
+    }
     const quoteNum = normalizeQuoteNumber(quote.quoteNumber);
     if (!quoteNum) {
       setSaveQuoteError("Enter a quote number first.");
@@ -1346,6 +1437,7 @@ export default function QuoteBuilderPage() {
           description: item.optionalDescription ?? item.optional_description ?? null,
           importLineId: options?.import_line_id ?? null,
           chosenOptions: options?.chosen_options ?? null,
+          availableOptions: options?.available_options?.length ? options.available_options : null,
           qty,
           unitPrice,
           discountType: "none",
@@ -1396,7 +1488,7 @@ export default function QuoteBuilderPage() {
         items,
         createdAt: now,
         updatedAt: now,
-        quoteDate: data.quoteDate ? new Date(data.quoteDate).toLocaleDateString("en-US") : todayQuoteDate(),
+        quoteDate: dbQuoteDateToQuoteDate(data.quoteDate),
       };
 
       const recalculated = recalcQuotePreservingTaxRate(draft, items, {
@@ -1418,6 +1510,25 @@ export default function QuoteBuilderPage() {
 
   return (
     <main className="container">
+      {scrapeCartServerLoading ? (
+        <div
+          className="quote-builder-scrape-overlay"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="quote-builder-scrape-panel">
+            <div className="quote-builder-scrape-spinner" aria-hidden />
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#0f172a" }}>
+              Reading live cart…
+            </div>
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.45 }}>
+              Please wait while product options are loaded from the storefront.
+              This can take a few seconds.
+            </div>
+          </div>
+        </div>
+      ) : null}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -1432,6 +1543,37 @@ export default function QuoteBuilderPage() {
               border-radius: 50%;
               animation: quote-builder-identify-spin 0.65s linear infinite;
               flex-shrink: 0;
+            }
+            .quote-builder-scrape-overlay {
+              position: fixed;
+              inset: 0;
+              z-index: 9999;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: rgba(15, 23, 42, 0.45);
+              backdrop-filter: blur(2px);
+            }
+            .quote-builder-scrape-panel {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 14px;
+              min-width: 260px;
+              max-width: min(90vw, 360px);
+              padding: 28px 32px;
+              border-radius: 12px;
+              background: #ffffff;
+              box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+              text-align: center;
+            }
+            .quote-builder-scrape-spinner {
+              width: 40px;
+              height: 40px;
+              border: 3px solid #dbeafe;
+              border-top-color: #1d4ed8;
+              border-radius: 50%;
+              animation: quote-builder-identify-spin 0.7s linear infinite;
             }
           `,
         }}
@@ -1633,13 +1775,15 @@ export default function QuoteBuilderPage() {
                 ...customerInfoFromPaste(e.target.value),
               }))
             }
-            placeholder={`Medvantx
-              Julie Morrell
-              4005 Carmel View Road Unit 69
-              San Diego, CA 92130
-              United States
-              (919) 699-3466
-              Julie.Morrell@medvantx.com`}
+            placeholder={[
+              "Medvantx",
+              "Julie Morrell",
+              "4005 Carmel View Road Unit 69",
+              "San Diego, CA 92130",
+              "United States",
+              "(919) 699-3466",
+              "Julie.Morrell@medvantx.com",
+            ].join("\n")}
             style={{
               marginTop: 8,
               width: "100%",
@@ -1652,6 +1796,7 @@ export default function QuoteBuilderPage() {
               resize: "vertical",
               background: "#fff",
               whiteSpace: "pre-wrap",
+              textAlign: "left",
             }}
           />
         </div>
@@ -1738,7 +1883,12 @@ export default function QuoteBuilderPage() {
                             }
                             getLineOptions(item);
                           }}
-                          disabled={!lastCartPayload || !lastCartPayload.cartItems.length}
+                          disabled={
+                            !(
+                              item.availableOptions?.length ||
+                              (lastCartPayload && lastCartPayload.cartItems.length)
+                            )
+                          }
                         >
                           {lineItemOptions[item.id]?.loading
                             ? "Loading..."
@@ -2084,7 +2234,14 @@ export default function QuoteBuilderPage() {
                   identifyLoading
                 }
               >
-                {scrapeCartServerLoading ? "Reading live cart…" : "Add Products From Cart"}
+                {scrapeCartServerLoading ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span className="quote-builder-identify-spinner" aria-hidden />
+                    Reading live cart…
+                  </span>
+                ) : (
+                  "Add Products From Cart"
+                )}
               </button>
               <button
                 type="button"
@@ -2328,16 +2485,18 @@ export default function QuoteBuilderPage() {
               type="button"
               className="btn"
               onClick={() => void createNewQuote()}
-              disabled={saveQuoteLoading}
+              disabled={saveQuoteLoading || !canSaveQuote}
+              title={!canSaveQuote ? "Add at least one line item before saving" : undefined}
             >
-              {saveQuoteLoading ? "Saving..." : "Create a new quote"}
+              {saveQuoteLoading ? "Saving..." : "Duplicate and Save"}
             </button>
           ) : null}
           <button
             type="button"
             className="btn primary"
             onClick={() => void saveQuote()}
-            disabled={saveQuoteLoading}
+            disabled={saveQuoteLoading || !canSaveQuote}
+            title={!canSaveQuote ? "Add at least one line item before saving" : undefined}
           >
             {saveQuoteLoading ? "Saving..." : "SAVE QUOTE"}
           </button>

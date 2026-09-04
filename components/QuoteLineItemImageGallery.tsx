@@ -57,7 +57,7 @@ export function QuoteLineItemImageGallery({ items, variant = "preview", onRemove
           <div key={key} style={{ textAlign: "center", maxWidth: imgW + 24 }}>
             {(() => {
               const imageHref = normalizeProductImageUrl(imageUrl);
-              const fallbackHref = `https://www.xyzdisplays.com/ProductDetails.asp?ProductCode=${encodeURIComponent(item.sku ?? "")}`;
+              const fallbackHref = `https://www.xyzdisplays.com/ProductDetails.php?ProductCode=${encodeURIComponent(item.sku ?? "")}`;
               const href = imageHref ?? fallbackHref;
               return (
                 <div style={{ position: "relative", display: "inline-block" }}>

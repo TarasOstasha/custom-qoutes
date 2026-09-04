@@ -10,6 +10,7 @@ exports.removeQuoteLineById = removeQuoteLineById;
 exports.updateQuoteLineQty = updateQuoteLineQty;
 exports.serializeQuoteItemsForDb = serializeQuoteItemsForDb;
 exports.deserializeQuoteItemFromDb = deserializeQuoteItemFromDb;
+const quoteItemImages_1 = require("./quoteItemImages");
 const recalcQuote_1 = require("./recalcQuote");
 /** Volusion cart lines must have a positive EACH/TOTAL price; option sub-rows repeat the SKU at $0. */
 function isImportableVolusionCartRow(params) {
@@ -34,6 +35,23 @@ function resolveCartLineId(row, rowIndex) {
         return fromRow;
     return buildStableCartLineId(row, rowIndex);
 }
+function normalizeMatchValue(value) {
+    return (value ?? "").trim().toLowerCase();
+}
+function uniqueOptionList(rows) {
+    const unique = new Set();
+    for (const row of rows) {
+        for (const option of row.options ?? []) {
+            const normalized = option.trim();
+            if (normalized)
+                unique.add(normalized);
+        }
+    }
+    return Array.from(unique);
+}
+function rowsWithOptions(rows) {
+    return rows.filter((row) => (row.options ?? []).some((option) => option.trim()));
+}
 function findCartRowForQuoteItem(item, cartItems) {
     const importLineId = (item.importLineId ?? "").trim();
     if (importLineId) {
@@ -44,19 +62,49 @@ function findCartRowForQuoteItem(item, cartItems) {
         if (byResolved)
             return byResolved;
     }
-    const sku = (item.sku ?? item.sourceProductId ?? "").trim().toLowerCase();
+    const sku = normalizeMatchValue(item.sku ?? item.sourceProductId);
     const unitPrice = Number(item.unitPrice);
+    const skuMatches = sku
+        ? cartItems.filter((row) => normalizeMatchValue(row.productCode) === sku)
+        : [];
     if (sku && Number.isFinite(unitPrice) && unitPrice > 0) {
-        return cartItems.find((row) => (row.productCode ?? "").trim().toLowerCase() === sku &&
-            Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01);
+        const pricedMatch = skuMatches.find((row) => Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01);
+        if (pricedMatch)
+            return pricedMatch;
+    }
+    if (skuMatches.length === 1)
+        return skuMatches[0];
+    const name = normalizeMatchValue(item.name);
+    if (name) {
+        const nameMatches = cartItems.filter((row) => normalizeMatchValue(row.name) === name);
+        if (nameMatches.length === 1)
+            return nameMatches[0];
     }
     return undefined;
 }
 function collectOptionsForCartLine(item, cartItems) {
-    const cartRow = findCartRowForQuoteItem(item, cartItems);
-    if (cartRow?.options?.length) {
-        return cartRow.options.map((option) => option.trim()).filter(Boolean);
+    if (item.availableOptions?.length) {
+        return item.availableOptions.map((option) => option.trim()).filter(Boolean);
     }
+    const exactRow = findCartRowForQuoteItem(item, cartItems);
+    if (exactRow?.options?.length) {
+        return exactRow.options.map((option) => option.trim()).filter(Boolean);
+    }
+    const sku = normalizeMatchValue(item.sku ?? item.sourceProductId);
+    const unitPrice = Number(item.unitPrice);
+    const skuMatches = rowsWithOptions(sku ? cartItems.filter((row) => normalizeMatchValue(row.productCode) === sku) : []);
+    if (skuMatches.length) {
+        if (Number.isFinite(unitPrice) && unitPrice > 0) {
+            const priced = skuMatches.filter((row) => Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01);
+            if (priced.length)
+                return uniqueOptionList(priced);
+        }
+        return uniqueOptionList(skuMatches);
+    }
+    const name = normalizeMatchValue(item.name);
+    const nameMatches = rowsWithOptions(name ? cartItems.filter((row) => normalizeMatchValue(row.name) === name) : []);
+    if (nameMatches.length)
+        return uniqueOptionList(nameMatches);
     if (item.chosenOptions?.length) {
         return item.chosenOptions.map((option) => option.trim()).filter(Boolean);
     }
@@ -87,6 +135,7 @@ function mapCartRowsToQuoteItems(params) {
                 ? (0, recalcQuote_1.round2)(row.lineTotal / qty)
                 : 0;
         const lineSubtotal = (0, recalcQuote_1.round2)(unitPrice * qty);
+        const availableOptions = (row.options ?? []).map((option) => option.trim()).filter(Boolean);
         return {
             id: `${idPrefix}_${importBatch}_${index}`,
             quoteId,
@@ -98,6 +147,7 @@ function mapCartRowsToQuoteItems(params) {
             name: row.name || row.productCode || "Cart Item",
             description: null,
             chosenOptions: null,
+            availableOptions: availableOptions.length ? availableOptions : null,
             qty,
             unitPrice,
             discountType: "none",
@@ -119,22 +169,34 @@ function updateQuoteLineQty(items, itemId, qty) {
     return items.map((item) => (item.id === itemId ? { ...item, qty, updatedAt: new Date().toISOString() } : item));
 }
 function serializeQuoteItemsForDb(items) {
-    return items.map((item) => ({
-        product_code: item.sku ?? item.sourceProductId ?? null,
-        description: item.name ?? null,
-        optional_description: item.description ?? null,
-        image_url: item.imageUrl || null,
-        qty: Number(item.qty),
-        unit_price: Number(item.unitPrice),
-        amount: Number(item.lineTotal),
-        options_json: item.chosenOptions?.length || item.imageUrl || item.importLineId
-            ? {
-                ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
-                ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
-                ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
-            }
-            : null,
-    }));
+    return items.map((item) => {
+        const extraImageUrls = (item.extraImageUrls ?? [])
+            .map((url) => url.trim())
+            .filter(Boolean);
+        const availableOptions = (item.availableOptions ?? []).map((option) => option.trim()).filter(Boolean);
+        return {
+            product_code: item.sku ?? item.sourceProductId ?? null,
+            description: item.name ?? null,
+            optional_description: item.description ?? null,
+            image_url: item.imageUrl || null,
+            qty: Number(item.qty),
+            unit_price: Number(item.unitPrice),
+            amount: Number(item.lineTotal),
+            options_json: item.chosenOptions?.length ||
+                availableOptions.length ||
+                item.imageUrl ||
+                extraImageUrls.length ||
+                item.importLineId
+                ? {
+                    ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+                    ...(availableOptions.length ? { available_options: availableOptions } : {}),
+                    ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+                    ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
+                    ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
+                }
+                : null,
+        };
+    });
 }
 function deserializeQuoteItemFromDb(item, index, quoteId, now) {
     const qty = Number(item.qty) || 1;
@@ -144,6 +206,8 @@ function deserializeQuoteItemFromDb(item, index, quoteId, now) {
     const options = item.optionsJson ?? item.options_json ?? null;
     const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
     const imageFromOptions = options?.image_url?.trim() || null;
+    const extraImageUrls = (0, quoteItemImages_1.normalizeExtraImageUrls)(options?.extra_image_urls);
+    const availableOptions = (options?.available_options ?? []).map((option) => option.trim()).filter(Boolean);
     return {
         id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
         quoteId,
@@ -152,9 +216,11 @@ function deserializeQuoteItemFromDb(item, index, quoteId, now) {
         sku: productCode,
         importLineId: options?.import_line_id ?? null,
         imageUrl: imageFromDb ?? imageFromOptions,
+        extraImageUrls,
         name: item.description ?? productCode ?? "Line Item",
         description: item.optionalDescription ?? item.optional_description ?? null,
         chosenOptions: options?.chosen_options ?? null,
+        availableOptions: availableOptions.length ? availableOptions : null,
         qty,
         unitPrice,
         discountType: "none",

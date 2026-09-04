@@ -32,8 +32,27 @@ export function resolveCartLineId(row: CartItemRow, rowIndex: number): string {
   return buildStableCartLineId(row, rowIndex);
 }
 
+function normalizeMatchValue(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function uniqueOptionList(rows: CartItemRow[]): string[] {
+  const unique = new Set<string>();
+  for (const row of rows) {
+    for (const option of row.options ?? []) {
+      const normalized = option.trim();
+      if (normalized) unique.add(normalized);
+    }
+  }
+  return Array.from(unique);
+}
+
+function rowsWithOptions(rows: CartItemRow[]): CartItemRow[] {
+  return rows.filter((row) => (row.options ?? []).some((option) => option.trim()));
+}
+
 export function findCartRowForQuoteItem(
-  item: Pick<QuoteItem, "importLineId" | "sku" | "sourceProductId" | "unitPrice" | "chosenOptions">,
+  item: Pick<QuoteItem, "importLineId" | "sku" | "sourceProductId" | "unitPrice" | "chosenOptions" | "name">,
   cartItems: CartItemRow[],
 ): CartItemRow | undefined {
   const importLineId = (item.importLineId ?? "").trim();
@@ -44,27 +63,61 @@ export function findCartRowForQuoteItem(
     if (byResolved) return byResolved;
   }
 
-  const sku = (item.sku ?? item.sourceProductId ?? "").trim().toLowerCase();
+  const sku = normalizeMatchValue(item.sku ?? item.sourceProductId);
   const unitPrice = Number(item.unitPrice);
+  const skuMatches = sku
+    ? cartItems.filter((row) => normalizeMatchValue(row.productCode) === sku)
+    : [];
   if (sku && Number.isFinite(unitPrice) && unitPrice > 0) {
-    return cartItems.find(
-      (row) =>
-        (row.productCode ?? "").trim().toLowerCase() === sku &&
-        Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01,
-    );
+    const pricedMatch = skuMatches.find((row) => Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01);
+    if (pricedMatch) return pricedMatch;
+  }
+  if (skuMatches.length === 1) return skuMatches[0];
+
+  const name = normalizeMatchValue(item.name);
+  if (name) {
+    const nameMatches = cartItems.filter((row) => normalizeMatchValue(row.name) === name);
+    if (nameMatches.length === 1) return nameMatches[0];
   }
 
   return undefined;
 }
 
 export function collectOptionsForCartLine(
-  item: Pick<QuoteItem, "importLineId" | "sku" | "sourceProductId" | "unitPrice" | "chosenOptions">,
+  item: Pick<
+    QuoteItem,
+    "importLineId" | "sku" | "sourceProductId" | "unitPrice" | "chosenOptions" | "availableOptions" | "name"
+  >,
   cartItems: CartItemRow[],
 ): string[] {
-  const cartRow = findCartRowForQuoteItem(item, cartItems);
-  if (cartRow?.options?.length) {
-    return cartRow.options.map((option) => option.trim()).filter(Boolean);
+  if (item.availableOptions?.length) {
+    return item.availableOptions.map((option) => option.trim()).filter(Boolean);
   }
+
+  const exactRow = findCartRowForQuoteItem(item, cartItems);
+  if (exactRow?.options?.length) {
+    return exactRow.options.map((option) => option.trim()).filter(Boolean);
+  }
+
+  const sku = normalizeMatchValue(item.sku ?? item.sourceProductId);
+  const unitPrice = Number(item.unitPrice);
+  const skuMatches = rowsWithOptions(
+    sku ? cartItems.filter((row) => normalizeMatchValue(row.productCode) === sku) : [],
+  );
+  if (skuMatches.length) {
+    if (Number.isFinite(unitPrice) && unitPrice > 0) {
+      const priced = skuMatches.filter((row) => Math.abs((row.unitPrice ?? 0) - unitPrice) < 0.01);
+      if (priced.length) return uniqueOptionList(priced);
+    }
+    return uniqueOptionList(skuMatches);
+  }
+
+  const name = normalizeMatchValue(item.name);
+  const nameMatches = rowsWithOptions(
+    name ? cartItems.filter((row) => normalizeMatchValue(row.name) === name) : [],
+  );
+  if (nameMatches.length) return uniqueOptionList(nameMatches);
+
   if (item.chosenOptions?.length) {
     return item.chosenOptions.map((option) => option.trim()).filter(Boolean);
   }
@@ -105,6 +158,8 @@ export function mapCartRowsToQuoteItems(params: MapCartRowsParams): QuoteItem[] 
           : 0;
     const lineSubtotal = round2(unitPrice * qty);
 
+    const availableOptions = (row.options ?? []).map((option) => option.trim()).filter(Boolean);
+
     return {
       id: `${idPrefix}_${importBatch}_${index}`,
       quoteId,
@@ -116,6 +171,7 @@ export function mapCartRowsToQuoteItems(params: MapCartRowsParams): QuoteItem[] 
       name: row.name || row.productCode || "Cart Item",
       description: null,
       chosenOptions: null,
+      availableOptions: availableOptions.length ? availableOptions : null,
       qty,
       unitPrice,
       discountType: "none" as const,
@@ -153,6 +209,7 @@ export function serializeQuoteItemsForDb(
       | "unitPrice"
       | "lineTotal"
       | "chosenOptions"
+      | "availableOptions"
       | "importLineId"
     >
   >,
@@ -161,6 +218,7 @@ export function serializeQuoteItemsForDb(
     const extraImageUrls = (item.extraImageUrls ?? [])
       .map((url) => url.trim())
       .filter(Boolean);
+    const availableOptions = (item.availableOptions ?? []).map((option) => option.trim()).filter(Boolean);
     return {
       product_code: item.sku ?? item.sourceProductId ?? null,
       description: item.name ?? null,
@@ -171,11 +229,13 @@ export function serializeQuoteItemsForDb(
       amount: Number(item.lineTotal),
       options_json:
         item.chosenOptions?.length ||
+        availableOptions.length ||
         item.imageUrl ||
         extraImageUrls.length ||
         item.importLineId
           ? {
               ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+              ...(availableOptions.length ? { available_options: availableOptions } : {}),
               ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
               ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
               ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
@@ -201,12 +261,14 @@ export function deserializeQuoteItemFromDb(
     amount?: number | string | null;
     optionsJson?: {
       chosen_options?: string[];
+      available_options?: string[];
       image_url?: string;
       extra_image_urls?: string[];
       import_line_id?: string;
     } | null;
     options_json?: {
       chosen_options?: string[];
+      available_options?: string[];
       image_url?: string;
       extra_image_urls?: string[];
       import_line_id?: string;
@@ -224,6 +286,7 @@ export function deserializeQuoteItemFromDb(
   const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
   const imageFromOptions = options?.image_url?.trim() || null;
   const extraImageUrls = normalizeExtraImageUrls(options?.extra_image_urls);
+  const availableOptions = (options?.available_options ?? []).map((option) => option.trim()).filter(Boolean);
 
   return {
     id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
@@ -237,6 +300,7 @@ export function deserializeQuoteItemFromDb(
     name: item.description ?? productCode ?? "Line Item",
     description: item.optionalDescription ?? item.optional_description ?? null,
     chosenOptions: options?.chosen_options ?? null,
+    availableOptions: availableOptions.length ? availableOptions : null,
     qty,
     unitPrice,
     discountType: "none",
