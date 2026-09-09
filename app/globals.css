@@ -484,6 +484,54 @@ th {
   border-top: 1px solid #e5e7eb;
 }
 
+.unit-price-calc-wrap {
+  position: relative;
+  display: block;
+}
+
+.unit-price-calc-wrap input {
+  padding-right: 30px;
+  width: 100%;
+}
+
+.unit-price-calc-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.unit-price-calc-btn:hover {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.unit-price-calc-btn.active {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.unit-price-calc-btn:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 1px;
+}
+
+.quote-calculator-apply {
+  width: 100%;
+  margin-top: 10px;
+}
+
 .quote-calculator {
   position: sticky;
   top: 16px;

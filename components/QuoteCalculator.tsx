@@ -5,7 +5,42 @@ import calculator from "advanced-calculator";
 
 type Props = {
   onClose: () => void;
+  initialExpression?: string;
+  onApply?: (value: number) => void;
+  applyLabel?: string;
 };
+
+export function PriceCalculatorTrigger({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`unit-price-calc-btn${active ? " active" : ""}`}
+      onClick={onClick}
+      aria-label={label}
+      aria-expanded={active}
+      aria-controls="quote-calculator-panel"
+    >
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+        <rect x="5" y="3" width="14" height="18" rx="2" stroke="currentColor" strokeWidth="1.8" />
+        <rect x="8" y="6" width="8" height="3" rx="0.5" stroke="currentColor" strokeWidth="1.6" />
+        <circle cx="9" cy="13" r="0.9" fill="currentColor" />
+        <circle cx="12" cy="13" r="0.9" fill="currentColor" />
+        <circle cx="15" cy="13" r="0.9" fill="currentColor" />
+        <circle cx="9" cy="16.5" r="0.9" fill="currentColor" />
+        <circle cx="12" cy="16.5" r="0.9" fill="currentColor" />
+        <circle cx="15" cy="16.5" r="0.9" fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
 
 type CalcKey = {
   label: string;
@@ -89,8 +124,13 @@ function evaluateExpression(expression: string): { ok: true; value: string } | {
   }
 }
 
-export default function QuoteCalculator({ onClose }: Props) {
-  const [expression, setExpression] = useState("");
+export default function QuoteCalculator({
+  onClose,
+  initialExpression = "",
+  onApply,
+  applyLabel = "Use this price",
+}: Props) {
+  const [expression, setExpression] = useState(initialExpression);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [justEvaluated, setJustEvaluated] = useState(false);
@@ -184,6 +224,26 @@ export default function QuoteCalculator({ onClose }: Props) {
     }
   };
 
+  const applyToField = () => {
+    if (!onApply) return;
+    const evaluated =
+      result != null
+        ? { ok: true as const, value: result }
+        : evaluateExpression(expression);
+    if (!evaluated.ok) {
+      setError(evaluated.error);
+      setResult(null);
+      return;
+    }
+    const n = Number(evaluated.value);
+    if (!Number.isFinite(n)) {
+      setError("Invalid input");
+      setResult(null);
+      return;
+    }
+    onApply(n);
+  };
+
   const copyResult = async () => {
     if (result == null) return;
     try {
@@ -261,6 +321,11 @@ export default function QuoteCalculator({ onClose }: Props) {
           </button>
         ))}
       </div>
+      {onApply ? (
+        <button type="button" className="btn primary quote-calculator-apply" onClick={applyToField}>
+          {applyLabel}
+        </button>
+      ) : null}
     </aside>
   );
 }

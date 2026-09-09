@@ -47,7 +47,7 @@ import {
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
 import { collectOptionsForCartLine, deserializeQuoteItemFromDb, mapCartRowsToQuoteItems } from "../../lib/cartImport";
 import AddPopupWindow from "../../components/AddPopupWindow";
-import QuoteCalculator from "../../components/QuoteCalculator";
+import QuoteCalculator, { PriceCalculatorTrigger } from "../../components/QuoteCalculator";
 
 function currency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -195,6 +195,11 @@ type ApiQuote = {
   items?: ApiQuoteItem[];
 };
 
+type CalculatorTarget = {
+  itemId: string;
+  field: "unitPrice" | "discountValue";
+};
+
 const asNumber = (value: string | number | null | undefined): number => {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -261,7 +266,7 @@ export default function QuoteBuilderPage() {
   const [clearCartLoading, setClearCartLoading] = useState(false);
   const [clearCartMessage, setClearCartMessage] = useState<string | null>(null);
   const [clearCartError, setClearCartError] = useState<string | null>(null);
-  const [calculatorOpen, setCalculatorOpen] = useState(false);
+  const [calculatorTarget, setCalculatorTarget] = useState<CalculatorTarget | null>(null);
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
   const [saveQuoteError, setSaveQuoteError] = useState<string | null>(null);
@@ -521,6 +526,25 @@ export default function QuoteBuilderPage() {
         ...recalcQuotePreservingTaxRate(prev, items),
       };
     });
+  };
+
+  const togglePriceCalculator = (itemId: string, field: CalculatorTarget["field"]) => {
+    setCalculatorTarget((prev) =>
+      prev?.itemId === itemId && prev.field === field ? null : { itemId, field },
+    );
+  };
+
+  const applyCalculatorValue = (value: number) => {
+    if (!calculatorTarget) return;
+    const index = quote.items.findIndex((item) => item.id === calculatorTarget.itemId);
+    if (index < 0) return;
+    const n = round2(value);
+    if (calculatorTarget.field === "discountValue") {
+      updateItem(index, { discountValue: Math.max(0, n) });
+    } else {
+      updateItem(index, { unitPrice: n });
+    }
+    setCalculatorTarget(null);
   };
 
   const removeLine = (itemId: string) => {
@@ -1475,6 +1499,7 @@ export default function QuoteBuilderPage() {
       setLoadedQuoteId(data.id);
       setOriginalLoadedQuoteNumber(readApiQuoteNumber(data) || null);
       setLineItemOptions({});
+      setCalculatorTarget(null);
       setSearchQuery("");
       setSearchResults([]);
     } catch (error) {
@@ -1483,6 +1508,16 @@ export default function QuoteBuilderPage() {
       setLoadQuoteLoadingId(null);
     }
   };
+
+  const calculatorItem = calculatorTarget
+    ? quote.items.find((item) => item.id === calculatorTarget.itemId)
+    : undefined;
+  const calculatorOpen = Boolean(calculatorTarget && calculatorItem);
+  const calculatorInitialValue = calculatorItem
+    ? calculatorTarget?.field === "discountValue"
+      ? calculatorItem.discountValue
+      : calculatorItem.unitPrice
+    : 0;
 
   return (
     <main className={`container${calculatorOpen ? " quote-builder-container-with-calc" : ""}`}>
@@ -1611,6 +1646,7 @@ export default function QuoteBuilderPage() {
                 setLastCartPayload(null);
                 setLoadedQuoteId(null);
                 setOriginalLoadedQuoteNumber(null);
+                setCalculatorTarget(null);
                 setQuote(createEmptyQuote());
               }}
             >
@@ -1796,7 +1832,7 @@ export default function QuoteBuilderPage() {
                 <th style={{ width: 130 }}>Stock #</th>
                 <th>Description</th>
                 <th style={{ width: 90 }}>Qty</th>
-                <th style={{ width: 130 }}>Unit Price</th>
+                <th style={{ width: 148 }}>Unit Price</th>
                 <th style={{ width: 130 }}>Amount</th>
               </tr>
             </thead>
@@ -1972,17 +2008,28 @@ export default function QuoteBuilderPage() {
                           </select>
                         </td>
                         <td>
-                          <input
-                            type="number"
-                            min={0}
-                            step={item.discountType === "percent" ? "0.01" : "any"}
-                            value={item.discountValue}
-                            placeholder={item.discountType === "percent" ? "e.g. 10" : "e.g. 50"}
-                            onChange={(e) => {
-                              const n = Number(e.target.value);
-                              updateItem(index, { discountValue: Number.isFinite(n) ? Math.max(0, n) : 0 });
-                            }}
-                          />
+                          <div className="unit-price-calc-wrap">
+                            <input
+                              type="number"
+                              className="no-spinner"
+                              min={0}
+                              step={item.discountType === "percent" ? "0.01" : "any"}
+                              value={item.discountValue}
+                              placeholder={item.discountType === "percent" ? "e.g. 10" : "e.g. 50"}
+                              onChange={(e) => {
+                                const n = Number(e.target.value);
+                                updateItem(index, { discountValue: Number.isFinite(n) ? Math.max(0, n) : 0 });
+                              }}
+                            />
+                            <PriceCalculatorTrigger
+                              active={
+                                calculatorTarget?.itemId === item.id &&
+                                calculatorTarget.field === "discountValue"
+                              }
+                              onClick={() => togglePriceCalculator(item.id, "discountValue")}
+                              label={`Open calculator for ${item.name || "discount"}`}
+                            />
+                          </div>
                         </td>
                       </>
                     ) : (
@@ -2000,28 +2047,38 @@ export default function QuoteBuilderPage() {
                           />
                         </td>
                         <td>
-                          <input
-                            type="number"
-                            className="no-spinner"
-                            step={item.lineType === "custom" ? "any" : undefined}
-                            min={item.lineType === "custom" ? undefined : 0}
-                            value={item.unitPrice}
-                            placeholder={item.lineType === "custom" ? "e.g. -50 for credit" : undefined}
-                            title={
-                              item.lineType === "custom"
-                                ? "Negative unit price or qty reduces the quote total (credit line)"
-                                : undefined
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                                e.preventDefault();
+                          <div className="unit-price-calc-wrap">
+                            <input
+                              type="number"
+                              className="no-spinner"
+                              step={item.lineType === "custom" ? "any" : undefined}
+                              min={item.lineType === "custom" ? undefined : 0}
+                              value={item.unitPrice}
+                              placeholder={item.lineType === "custom" ? "e.g. -50 for credit" : undefined}
+                              title={
+                                item.lineType === "custom"
+                                  ? "Negative unit price or qty reduces the quote total (credit line)"
+                                  : undefined
                               }
-                            }}
-                            onChange={(e) => {
-                              const n = Number(e.target.value);
-                              updateItem(index, { unitPrice: Number.isFinite(n) ? n : 0 });
-                            }}
-                          />
+                              onKeyDown={(e) => {
+                                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                }
+                              }}
+                              onChange={(e) => {
+                                const n = Number(e.target.value);
+                                updateItem(index, { unitPrice: Number.isFinite(n) ? n : 0 });
+                              }}
+                            />
+                            <PriceCalculatorTrigger
+                              active={
+                                calculatorTarget?.itemId === item.id &&
+                                calculatorTarget.field === "unitPrice"
+                              }
+                              onClick={() => togglePriceCalculator(item.id, "unitPrice")}
+                              label={`Open calculator for ${item.name || "unit price"}`}
+                            />
+                          </div>
                         </td>
                       </>
                     )}
@@ -2236,16 +2293,6 @@ export default function QuoteBuilderPage() {
               >
                 {clearCartLoading ? "Clearing cart..." : "Clear Cart"}
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setCalculatorOpen((open) => !open)}
-                aria-expanded={calculatorOpen}
-                aria-controls="quote-calculator-panel"
-                style={{ marginLeft: 8 }}
-              >
-                {calculatorOpen ? "Hide Calculator" : "Use Calculator"}
-              </button>
             </div>
             {clearCartMessage ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>
@@ -2280,9 +2327,17 @@ export default function QuoteBuilderPage() {
           ) : null} */}
         </div>
           </div>
-          {calculatorOpen ? (
+          {calculatorOpen && calculatorTarget && calculatorItem ? (
             <div id="quote-calculator-panel">
-              <QuoteCalculator onClose={() => setCalculatorOpen(false)} />
+              <QuoteCalculator
+                key={`${calculatorTarget.itemId}-${calculatorTarget.field}`}
+                initialExpression={String(calculatorInitialValue)}
+                applyLabel={
+                  calculatorTarget.field === "discountValue" ? "Use this discount" : "Use this price"
+                }
+                onApply={applyCalculatorValue}
+                onClose={() => setCalculatorTarget(null)}
+              />
             </div>
           ) : null}
         </div>
