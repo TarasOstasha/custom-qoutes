@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeQuoteNumber = normalizeQuoteNumber;
 exports.resolveQuoteSaveAction = resolveQuoteSaveAction;
 exports.mapQuoteItemsForCreate = mapQuoteItemsForCreate;
+const cartImport_1 = require("./cartImport");
 function normalizeQuoteNumber(value) {
     return (value ?? "").trim();
 }
@@ -32,31 +33,5 @@ function resolveQuoteSaveAction(params) {
     return { mode: "create", currentQuoteNumber };
 }
 function mapQuoteItemsForCreate(items) {
-    return items.map((item) => {
-        const extraImageUrls = (item.extraImageUrls ?? [])
-            .map((url) => url.trim())
-            .filter(Boolean);
-        return {
-            product_code: item.sku ?? item.sourceProductId ?? null,
-            description: item.name ?? null,
-            optional_description: item.description ?? null,
-            image_url: item.imageUrl || null,
-            qty: Number(item.qty),
-            unit_price: Number(item.unitPrice),
-            amount: Number(item.lineTotal),
-            options_json: item.chosenOptions?.length ||
-                item.availableOptions?.length ||
-                item.imageUrl ||
-                extraImageUrls.length ||
-                item.importLineId
-                ? {
-                    ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
-                    ...(item.availableOptions?.length ? { available_options: item.availableOptions } : {}),
-                    ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
-                    ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
-                    ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
-                }
-                : null,
-        };
-    });
+    return (0, cartImport_1.serializeQuoteItemsForDb)(items);
 }

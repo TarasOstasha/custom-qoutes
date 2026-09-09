@@ -45,7 +45,7 @@ import {
   saveQuoteDraft,
 } from "../../lib/quotePreviewStorage";
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
-import { collectOptionsForCartLine, mapCartRowsToQuoteItems } from "../../lib/cartImport";
+import { collectOptionsForCartLine, deserializeQuoteItemFromDb, mapCartRowsToQuoteItems } from "../../lib/cartImport";
 import AddPopupWindow from "../../components/AddPopupWindow";
 
 function currency(n: number): string {
@@ -147,6 +147,9 @@ type ApiQuoteItem = {
     image_url?: string;
     extra_image_urls?: string[];
     import_line_id?: string;
+    discount_scope?: "quote";
+    discount_type?: "amount" | "percent";
+    discount_value?: number;
   } | null;
   options_json?: {
     chosen_options?: string[];
@@ -154,6 +157,9 @@ type ApiQuoteItem = {
     image_url?: string;
     extra_image_urls?: string[];
     import_line_id?: string;
+    discount_scope?: "quote";
+    discount_type?: "amount" | "percent";
+    discount_value?: number;
   } | null;
   createdAt?: string;
   updatedAt?: string;
@@ -1416,41 +1422,9 @@ export default function QuoteBuilderPage() {
 
       const data = parsedBody as ApiQuote;
       const now = new Date().toISOString();
-      const items = (Array.isArray(data.items) ? data.items : []).map((item, index) => {
-        const qty = asNumber(item.qty) || 1;
-        const unitPrice = asNumber(item.unitPrice ?? item.unit_price ?? null);
-        const amount = asNumber(item.amount);
-        const calculatedAmount = amount || round2(qty * unitPrice);
-        const productCode = item.productCode ?? item.product_code ?? null;
-        const options = item.optionsJson ?? item.options_json ?? null;
-        const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
-        const imageFromOptions = options?.image_url?.trim() || null;
-        return {
-          id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
-          quoteId: data.id,
-          lineType: productCode ? "product" : "custom",
-          sourceProductId: productCode,
-          sku: productCode,
-          imageUrl: imageFromDb ?? imageFromOptions,
-          extraImageUrls: normalizeExtraImageUrls(options?.extra_image_urls),
-          name: item.description ?? productCode ?? "Line Item",
-          description: item.optionalDescription ?? item.optional_description ?? null,
-          importLineId: options?.import_line_id ?? null,
-          chosenOptions: options?.chosen_options ?? null,
-          availableOptions: options?.available_options?.length ? options.available_options : null,
-          qty,
-          unitPrice,
-          discountType: "none",
-          discountValue: 0,
-          discountScope: null,
-          sortOrder: index + 1,
-          lineSubtotal: calculatedAmount,
-          lineDiscountTotal: 0,
-          lineTotal: calculatedAmount,
-          createdAt: item.createdAt ?? now,
-          updatedAt: item.updatedAt ?? now,
-        } as QuoteItem;
-      });
+      const items = (Array.isArray(data.items) ? data.items : []).map((item, index) =>
+        deserializeQuoteItemFromDb(item, index, data.id, now),
+      );
 
       const loadedShippingTotal = asNumber(data.shipping);
       const loadedShippingOptions = parseShippingOptionsFromDb(

@@ -1,5 +1,6 @@
 import type { CartItemRow } from "./extractCartFromPage";
 import type { QuoteItem } from "./mockQuote";
+import { quoteDiscountFieldsForSave, quoteDiscountFieldsFromDb } from "./quoteDiscount";
 import { normalizeExtraImageUrls } from "./quoteItemImages";
 import { round2 } from "./recalcQuote";
 
@@ -195,52 +196,57 @@ export function updateQuoteLineQty(items: QuoteItem[], itemId: string, qty: numb
   return items.map((item) => (item.id === itemId ? { ...item, qty, updatedAt: new Date().toISOString() } : item));
 }
 
-export function serializeQuoteItemsForDb(
-  items: Array<
-    Pick<
-      QuoteItem,
-      | "sku"
-      | "sourceProductId"
-      | "name"
-      | "description"
-      | "imageUrl"
-      | "extraImageUrls"
-      | "qty"
-      | "unitPrice"
-      | "lineTotal"
-      | "chosenOptions"
-      | "availableOptions"
-      | "importLineId"
-    >
-  >,
-) {
+export type QuoteItemDbFields = {
+  sku?: string | null;
+  sourceProductId?: string | null;
+  name?: string | null;
+  description?: string | null;
+  imageUrl?: string | null;
+  extraImageUrls?: string[] | null;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+  chosenOptions?: string[] | null;
+  availableOptions?: string[] | null;
+  importLineId?: string | null;
+  discountType?: QuoteItem["discountType"];
+  discountValue?: number;
+  discountScope?: QuoteItem["discountScope"];
+};
+
+export function serializeQuoteItemsForDb(items: QuoteItemDbFields[]) {
   return items.map((item) => {
     const extraImageUrls = (item.extraImageUrls ?? [])
       .map((url) => url.trim())
       .filter(Boolean);
     const availableOptions = (item.availableOptions ?? []).map((option) => option.trim()).filter(Boolean);
+    const discountOptions = quoteDiscountFieldsForSave(item);
+    const isQuoteDiscount = item.discountScope === "quote";
+    const optionsJson =
+      item.chosenOptions?.length ||
+      availableOptions.length ||
+      item.imageUrl ||
+      extraImageUrls.length ||
+      item.importLineId ||
+      isQuoteDiscount
+        ? {
+            ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
+            ...(availableOptions.length ? { available_options: availableOptions } : {}),
+            ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
+            ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
+            ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
+            ...discountOptions,
+          }
+        : null;
     return {
       product_code: item.sku ?? item.sourceProductId ?? null,
       description: item.name ?? null,
       optional_description: item.description ?? null,
       image_url: item.imageUrl || null,
       qty: Number(item.qty),
-      unit_price: Number(item.unitPrice),
+      unit_price: isQuoteDiscount ? Number(item.discountValue) || 0 : Number(item.unitPrice),
       amount: Number(item.lineTotal),
-      options_json:
-        item.chosenOptions?.length ||
-        availableOptions.length ||
-        item.imageUrl ||
-        extraImageUrls.length ||
-        item.importLineId
-          ? {
-              ...(item.chosenOptions?.length ? { chosen_options: item.chosenOptions } : {}),
-              ...(availableOptions.length ? { available_options: availableOptions } : {}),
-              ...(item.imageUrl ? { image_url: item.imageUrl } : {}),
-              ...(extraImageUrls.length ? { extra_image_urls: extraImageUrls } : {}),
-              ...(item.importLineId ? { import_line_id: item.importLineId } : {}),
-            }
-          : null,
+      options_json: optionsJson,
     };
   });
 }
@@ -265,6 +271,9 @@ export function deserializeQuoteItemFromDb(
       image_url?: string;
       extra_image_urls?: string[];
       import_line_id?: string;
+      discount_scope?: "quote";
+      discount_type?: "amount" | "percent";
+      discount_value?: number;
     } | null;
     options_json?: {
       chosen_options?: string[];
@@ -272,21 +281,41 @@ export function deserializeQuoteItemFromDb(
       image_url?: string;
       extra_image_urls?: string[];
       import_line_id?: string;
+      discount_scope?: "quote";
+      discount_type?: "amount" | "percent";
+      discount_value?: number;
     } | null;
+    createdAt?: string;
+    updatedAt?: string;
   },
   index: number,
   quoteId: string,
   now: string,
 ): QuoteItem {
   const qty = Number(item.qty) || 1;
-  const unitPrice = Number(item.unitPrice ?? item.unit_price ?? 0) || 0;
-  const amount = Number(item.amount) || round2(qty * unitPrice);
+  const storedUnitPrice = Number(item.unitPrice ?? item.unit_price ?? 0) || 0;
+  const parsedAmount = Number(item.amount);
+  const amount =
+    item.amount != null && item.amount !== "" && Number.isFinite(parsedAmount)
+      ? parsedAmount
+      : round2(qty * storedUnitPrice);
   const productCode = item.productCode ?? item.product_code ?? null;
   const options = item.optionsJson ?? item.options_json ?? null;
   const imageFromDb = (item.imageUrl ?? item.image_url ?? "").trim() || null;
   const imageFromOptions = options?.image_url?.trim() || null;
   const extraImageUrls = normalizeExtraImageUrls(options?.extra_image_urls);
   const availableOptions = (options?.available_options ?? []).map((option) => option.trim()).filter(Boolean);
+  const name = item.description ?? productCode ?? "Line Item";
+  const description = item.optionalDescription ?? item.optional_description ?? null;
+  const discount = quoteDiscountFieldsFromDb({
+    options,
+    name,
+    description,
+    sku: productCode,
+    unitPrice: storedUnitPrice,
+    amount,
+  });
+  const unitPrice = discount.discountScope === "quote" ? 0 : storedUnitPrice;
 
   return {
     id: item.id ?? `qi_loaded_${Date.now()}_${index}`,
@@ -297,20 +326,20 @@ export function deserializeQuoteItemFromDb(
     importLineId: options?.import_line_id ?? null,
     imageUrl: imageFromDb ?? imageFromOptions,
     extraImageUrls,
-    name: item.description ?? productCode ?? "Line Item",
-    description: item.optionalDescription ?? item.optional_description ?? null,
+    name,
+    description,
     chosenOptions: options?.chosen_options ?? null,
     availableOptions: availableOptions.length ? availableOptions : null,
     qty,
     unitPrice,
-    discountType: "none",
-    discountValue: 0,
-    discountScope: null,
+    discountType: discount.discountType,
+    discountValue: discount.discountValue,
+    discountScope: discount.discountScope,
     sortOrder: index + 1,
     lineSubtotal: amount,
-    lineDiscountTotal: 0,
+    lineDiscountTotal: discount.discountScope === "quote" ? Math.abs(amount) : 0,
     lineTotal: amount,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: item.createdAt ?? now,
+    updatedAt: item.updatedAt ?? now,
   };
 }

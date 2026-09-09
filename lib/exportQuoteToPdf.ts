@@ -39,11 +39,25 @@ function optionValueForPdf(raw: string): string {
   return value || t;
 }
 
-function formatLineDescription(item: {
+type PdfDescriptionParts = {
+  title: string;
+  optionText: string;
+  fullText: string;
+};
+
+type DescriptionCellInput = {
+  content: string;
+  title: string;
+  optionText: string;
+  drawnCount?: number;
+};
+
+function getPdfDescriptionParts(item: {
   name: string;
   description?: string | null;
   chosenOptions?: string[] | null;
-}): string {
+}): PdfDescriptionParts {
+  const title = item.name ? String(item.name) : "";
   const descPdf = item.description
     ? String(item.description)
         .split(/\r?\n/)
@@ -51,13 +65,35 @@ function formatLineDescription(item: {
         .join("\n")
         .trim()
     : "";
-  const base = [item.name, descPdf].filter(Boolean).join("\n");
   const opts = (item.chosenOptions ?? [])
     .map((o) => optionValueForPdf(o))
     .filter(Boolean);
-  if (!opts.length) return base;
-  const optsBlock = ["Options:", ...opts.map((o) => `• ${o}`)].join("\n");
-  return base ? `${base}\n\n${optsBlock}` : optsBlock;
+
+  let optionText = descPdf;
+  if (opts.length) {
+    const optsBlock = ["Options:", ...opts.map((o) => `• ${o}`)].join("\n");
+    optionText = optionText ? `${optionText}\n\n${optsBlock}` : optsBlock;
+  }
+
+  const fullText = [title, optionText].filter(Boolean).join("\n");
+  return { title, optionText, fullText };
+}
+
+function isDescriptionCellInput(raw: unknown): raw is DescriptionCellInput {
+  return (
+    !!raw &&
+    typeof raw === "object" &&
+    "title" in raw &&
+    "optionText" in raw &&
+    typeof (raw as DescriptionCellInput).title === "string" &&
+    typeof (raw as DescriptionCellInput).optionText === "string"
+  );
+}
+
+function wrapPdfText(doc: jsPDF, text: string, maxWidth: number, fontSize: number): string[] {
+  if (!text) return [];
+  const wrapped = doc.splitTextToSize(text, maxWidth, { fontSize });
+  return Array.isArray(wrapped) ? wrapped : [wrapped];
 }
 
 function arrayBufferToBase64(buf: ArrayBuffer): string {
@@ -395,17 +431,24 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   }
 
   const tableStartY = galleryY + galleryH + 12;
+  const descriptionPageLines = new WeakMap<object, { start: number; lines: string[] }>();
   autoTable(doc, {
     startY: tableStartY,
     margin: { left: margin, right: margin },
     head: [["Stock #", "Description", "Qty", "Unit Price", "Amount"]],
-    body: quote.items.map((item) => [
-      item.sku || "—",
-      formatLineDescription(item),
-      isQuoteDiscountLine(item) ? "—" : String(item.qty),
-      isQuoteDiscountLine(item) ? formatQuoteDiscountRate(item) : money(item.unitPrice),
-      money(item.lineTotal),
-    ]),
+    body: quote.items.map((item) => {
+      const parts = getPdfDescriptionParts(item);
+      const descriptionCell: string | DescriptionCellInput = parts.optionText
+        ? { content: parts.fullText, title: parts.title, optionText: parts.optionText }
+        : parts.fullText;
+      return [
+        item.sku || "—",
+        descriptionCell,
+        isQuoteDiscountLine(item) ? "—" : String(item.qty),
+        isQuoteDiscountLine(item) ? formatQuoteDiscountRate(item) : money(item.unitPrice),
+        money(item.lineTotal),
+      ];
+    }),
     theme: "grid",
     styles: {
       font: "helvetica",
@@ -428,6 +471,46 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
       2: { cellWidth: 50, halign: "center" },
       3: { cellWidth: 75, halign: "right" },
       4: { cellWidth: 75, halign: "right" },
+    },
+    willDrawCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 1) return;
+      const raw = data.cell.raw;
+      if (!isDescriptionCellInput(raw) || !raw.optionText) return;
+      const lines = [...data.cell.text];
+      const start = raw.drawnCount ?? 0;
+      raw.drawnCount = start + lines.length;
+      descriptionPageLines.set(data.cell, { start, lines });
+      data.cell.text = [];
+    },
+    didDrawCell: (data) => {
+      if (data.section !== "body" || data.column.index !== 1) return;
+      const raw = data.cell.raw;
+      if (!isDescriptionCellInput(raw) || !raw.optionText) return;
+      const page = descriptionPageLines.get(data.cell);
+      if (!page?.lines.length) return;
+
+      const font = data.cell.styles.font || "helvetica";
+      const fontSize = data.cell.styles.fontSize;
+      const scaleFactor = doc.internal.scaleFactor;
+      const maxWidth =
+        data.cell.width - data.cell.padding("horizontal") + 1 / scaleFactor;
+
+      doc.setFont(font, "normal");
+      doc.setFontSize(fontSize);
+      const titleCount = wrapPdfText(doc, raw.title, maxWidth, fontSize).length;
+
+      const pos = data.cell.getTextPos();
+      const physicalLineHeight = 1.15;
+      const lineHeight = fontSize * doc.getLineHeightFactor();
+      let y = pos.y + fontSize * (2 - physicalLineHeight);
+
+      for (let i = 0; i < page.lines.length; i++) {
+        const italic = page.start + i >= titleCount;
+        doc.setFont(font, italic ? "italic" : "normal");
+        doc.setFontSize(fontSize);
+        doc.text(page.lines[i] ?? "", pos.x, y);
+        y += lineHeight;
+      }
     },
   });
 
