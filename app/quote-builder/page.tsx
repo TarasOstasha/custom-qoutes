@@ -47,6 +47,7 @@ import {
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
 import { collectOptionsForCartLine, deserializeQuoteItemFromDb, mapCartRowsToQuoteItems } from "../../lib/cartImport";
 import AddPopupWindow from "../../components/AddPopupWindow";
+import QuoteCalculator from "../../components/QuoteCalculator";
 
 function currency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -260,6 +261,7 @@ export default function QuoteBuilderPage() {
   const [clearCartLoading, setClearCartLoading] = useState(false);
   const [clearCartMessage, setClearCartMessage] = useState<string | null>(null);
   const [clearCartError, setClearCartError] = useState<string | null>(null);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
   const [saveQuoteError, setSaveQuoteError] = useState<string | null>(null);
@@ -1483,7 +1485,7 @@ export default function QuoteBuilderPage() {
   };
 
   return (
-    <main className="container">
+    <main className={`container${calculatorOpen ? " quote-builder-container-with-calc" : ""}`}>
       {scrapeCartServerLoading ? (
         <div
           className="quote-builder-scrape-overlay"
@@ -1775,6 +1777,8 @@ export default function QuoteBuilderPage() {
           />
         </div>
 
+        <div className={`quote-builder-work-area${calculatorOpen ? " quote-builder-work-area-with-calc" : ""}`}>
+          <div className="quote-builder-work-main">
         <div className="section">
           <h2 style={{ marginTop: 0 }}>Product images</h2>
           <QuoteLineItemImageGallery
@@ -2232,6 +2236,16 @@ export default function QuoteBuilderPage() {
               >
                 {clearCartLoading ? "Clearing cart..." : "Clear Cart"}
               </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setCalculatorOpen((open) => !open)}
+                aria-expanded={calculatorOpen}
+                aria-controls="quote-calculator-panel"
+                style={{ marginLeft: 8 }}
+              >
+                {calculatorOpen ? "Hide Calculator" : "Use Calculator"}
+              </button>
             </div>
             {clearCartMessage ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>
@@ -2264,6 +2278,13 @@ export default function QuoteBuilderPage() {
               {currency(lastCartPayload.grandTotal)}
             </div>
           ) : null} */}
+        </div>
+          </div>
+          {calculatorOpen ? (
+            <div id="quote-calculator-panel">
+              <QuoteCalculator onClose={() => setCalculatorOpen(false)} />
+            </div>
+          ) : null}
         </div>
 
         <div

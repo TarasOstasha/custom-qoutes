@@ -3,7 +3,7 @@ import type { QuoteItem } from "./mockQuote";
 export type QuoteDiscountFields = {
   discountType: QuoteItem["discountType"];
   discountValue: number;
-  discountScope: QuoteItem["discountScope"];
+  discountScope: "quote" | null;
 };
 
 export type QuoteDiscountOptionsJson = {
@@ -23,10 +23,10 @@ export function isQuoteDiscountLine(item: Pick<QuoteItem, "discountScope">): boo
 }
 
 export function looksLikeLegacyQuoteDiscountLine(item: {
-  name?: string | null;
-  description?: string | null;
-  sku?: string | null;
-  productCode?: string | null;
+  name?: string | null | undefined;
+  description?: string | null | undefined;
+  sku?: string | null | undefined;
+  productCode?: string | null | undefined;
 }): boolean {
   const sku = (item.sku ?? item.productCode ?? "").trim();
   if (sku) return false;
@@ -36,9 +36,9 @@ export function looksLikeLegacyQuoteDiscountLine(item: {
 }
 
 export function quoteDiscountFieldsForSave(item: {
-  discountType?: string | null;
-  discountValue?: number | null;
-  discountScope?: "quote" | null;
+  discountType?: string | null | undefined;
+  discountValue?: number | null | undefined;
+  discountScope?: "quote" | null | undefined;
 }): QuoteDiscountOptionsJson {
   if (item.discountScope !== "quote") return {};
   return {
