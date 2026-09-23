@@ -7,7 +7,12 @@ import { getApiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
+import QuoteInternalAttachments from "../../components/QuoteInternalAttachments";
 import { createEmptyQuote, defaultQuoteNumberFromDate, Quote, QuoteItem } from "../../lib/mockQuote";
+import {
+  normalizeInternalAttachments,
+  type QuoteAttachmentSearchHit,
+} from "../../lib/quoteAttachments";
 import { customerInfoFromPaste, formatCustomerInfoBlock } from "../../lib/customerInfo";
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { normalizeExtraImageUrls } from "../../lib/quoteItemImages";
@@ -126,6 +131,7 @@ type QuoteSearchResult = {
   email: string | null;
   total: string | number | null;
   status: string;
+  attachmentHits?: QuoteAttachmentSearchHit[];
 };
 
 type ApiQuoteItem = {
@@ -179,6 +185,8 @@ type ApiQuote = {
   phone: string | null;
   address: string | null;
   notes: string | null;
+  internalAttachmentsJson?: unknown;
+  internal_attachments_json?: unknown;
   subtotal: number | string | null;
   shipping: number | string | null;
   shippingLabel?: string | null;
@@ -234,6 +242,7 @@ export default function QuoteBuilderPage() {
     if (stored) {
       setQuote({
         ...stored,
+        internalAttachments: normalizeInternalAttachments(stored.internalAttachments),
         shippingMethod: resolveEffectiveShippingMethod(stored),
         shippingOptions: stored.shippingOptions?.length
           ? reconcileShippingSelectionWithTotal(
@@ -1215,6 +1224,7 @@ export default function QuoteBuilderPage() {
       phone: quote.customerPhone ?? null,
       address: quote.customerAddress ?? null,
       notes: quote.notes ?? null,
+      internal_attachments_json: normalizeInternalAttachments(quote.internalAttachments),
       subtotal: Number(totals.subtotal),
       shipping: Number(totals.shippingTotal),
       shipping_label: quote.shippingLabel ?? null,
@@ -1468,6 +1478,9 @@ export default function QuoteBuilderPage() {
         customerPhone: data.phone ?? null,
         customerAddress: data.address ?? null,
         notes: data.notes ?? null,
+        internalAttachments: normalizeInternalAttachments(
+          data.internalAttachmentsJson ?? data.internal_attachments_json,
+        ),
         subtotal: 0,
         discountTotal: 0,
         shippingTotal: loadedShippingTotal,
@@ -1663,7 +1676,7 @@ export default function QuoteBuilderPage() {
             id="quote-search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by quote #, customer, company, or email"
+            placeholder="Search by quote #, customer, company, email, file name, or screenshot text"
             style={{ marginTop: 6 }}
           />
           {searchLoading ? <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Searching...</div> : null}
@@ -1715,6 +1728,40 @@ export default function QuoteBuilderPage() {
                       .slice(0, 2)
                       .join(" · ") || "—"}
                   </div>
+                  {result.attachmentHits && result.attachmentHits.length > 0 ? (
+                    <div
+                      className="muted"
+                      style={{
+                        marginTop: 4,
+                        fontSize: 11,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {result.attachmentHits.map((hit) =>
+                        hit.url ? (
+                          <img
+                            key={`${result.id}-${hit.fileName}`}
+                            src={hit.url}
+                            alt=""
+                            title={hit.fileName}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              objectFit: "cover",
+                              borderRadius: 4,
+                              border: "1px solid #e5e7eb",
+                              background: "#fff",
+                            }}
+                          />
+                        ) : (
+                          <span key={`${result.id}-${hit.fileName}`}>{hit.fileName}</span>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -2369,6 +2416,12 @@ export default function QuoteBuilderPage() {
                 resize: "vertical",
                 background: "#fff",
               }}
+            />
+            <QuoteInternalAttachments
+              attachments={quote.internalAttachments ?? []}
+              onChange={(internalAttachments) =>
+                setQuote((prev) => ({ ...prev, internalAttachments }))
+              }
             />
           </div>
           <div className="totals">

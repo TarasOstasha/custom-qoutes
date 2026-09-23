@@ -1,4 +1,5 @@
 import type { CartShippingOption } from "./extractCartFromPage";
+import type { QuoteInternalAttachment } from "./quoteAttachments";
 
 export type QuoteItem = {
   id: string;
@@ -42,6 +43,8 @@ export type Quote = {
   customerPhone?: string | null;
   customerAddress?: string | null;
   notes?: string | null;
+  /** Internal files/screenshots for staff use only — never included in PDF/Excel export. */
+  internalAttachments?: QuoteInternalAttachment[] | null;
   subtotal: number;
   discountTotal: number;
   shippingTotal: number;
@@ -78,6 +81,7 @@ export const mockQuote: Quote = {
   customerPhone: "(973) 515-5151",
   customerAddress: "170 Changebridge Rd, Bldg A7\nMontville, NJ 07045",
   notes: "Estimate valid for 30 days",
+  internalAttachments: [],
   subtotal: 2992.5,
   discountTotal: 607.5,
   shippingTotal: 346.32,
@@ -180,6 +184,7 @@ export function createEmptyQuote(): Quote {
     customerPhone: null,
     customerAddress: null,
     notes: null,
+    internalAttachments: [],
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,

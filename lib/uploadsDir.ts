@@ -80,3 +80,26 @@ export function getUploadsDir(): string {
     return ensureLocalDir(fallback);
   }
 }
+
+export function resolveUploadedFilePath(fileUrlOrName: string): string | null {
+  const raw = fileUrlOrName.trim();
+  if (!raw) return null;
+
+  let name = raw;
+  try {
+    const parsed = new URL(raw, "http://localhost");
+    name = path.basename(parsed.pathname);
+  } catch {
+    name = path.basename(raw.replace(/\\/g, "/"));
+  }
+
+  name = decodeURIComponent(name).trim();
+  if (!name || name === "." || name === ".." || /[\\/]/.test(name)) return null;
+
+  const uploads = path.resolve(getUploadsDir());
+  const full = path.resolve(uploads, name);
+  const prefix = uploads.endsWith(path.sep) ? uploads : `${uploads}${path.sep}`;
+  if (full !== uploads && !full.startsWith(prefix)) return null;
+  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null;
+  return full;
+}

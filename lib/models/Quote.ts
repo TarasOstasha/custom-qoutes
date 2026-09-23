@@ -13,6 +13,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare phone: string | null;
   declare address: string | null;
   declare notes: string | null;
+  declare internalAttachmentsJson: unknown | null;
   declare subtotal: string | null;
   declare shipping: string | null;
   declare shippingLabel: string | null;
@@ -82,6 +83,11 @@ Quote.init(
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+    internalAttachmentsJson: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      field: "internal_attachments_json",
     },
     subtotal: {
       type: DataTypes.DECIMAL(10, 2),

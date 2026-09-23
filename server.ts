@@ -10,6 +10,7 @@ async function initializeRoutes(app: Express): Promise<void> {
   const { DataTypes } = require("sequelize") as { DataTypes: typeof DataTypesType };
   const quotesRouter = require("./routes/quotes").default as Express;
   const uploadImageRouter = require("./routes/uploadImage").default as Express;
+  const uploadAttachmentRouter = require("./routes/uploadAttachment").default as Express;
   const {
     openVisibleVolusionCartSession,
     openVisibleVolusionHomepageSession,
@@ -39,6 +40,7 @@ async function initializeRoutes(app: Express): Promise<void> {
     await addIfMissing("shipping_zip", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("tax_label", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("tax_description", { type: DataTypes.STRING, allowNull: true });
+    await addIfMissing("internal_attachments_json", { type: DataTypes.JSONB, allowNull: true });
   }
 
   sequelize
@@ -80,6 +82,7 @@ async function initializeRoutes(app: Express): Promise<void> {
 
   app.use("/api/uploads", express.static(getUploadsDir()));
   app.use("/api/upload-image", uploadImageRouter);
+  app.use("/api/upload-attachment", uploadAttachmentRouter);
   app.use("/api/quotes", quotesRouter);
   app.use("/quotes", quotesRouter);
 

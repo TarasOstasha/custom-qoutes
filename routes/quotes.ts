@@ -17,6 +17,12 @@ import {
   isOfficePersistenceAvailable,
   OFFLINE_PERSISTENCE_MESSAGE,
 } from "../lib/officePersistence";
+import {
+  compactLikeSearchPattern,
+  findAttachmentSearchHits,
+  likeSearchPattern,
+  normalizeInternalAttachments,
+} from "../lib/quoteAttachments";
 
 const router = Router();
 
@@ -44,6 +50,12 @@ const toDecimalStringOrNull = (value: unknown): string | null => {
 
 const pickBodyValue = (body: Record<string, unknown>, snake: string, camel: string): unknown =>
   body[snake] !== undefined ? body[snake] : body[camel];
+
+const parseInternalAttachmentsInput = (body: Record<string, unknown>) =>
+  normalizeInternalAttachments(
+    pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") ??
+      pickBodyValue(body, "internal_attachments", "internalAttachments"),
+  );
 const uuidV4LikePattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -116,6 +128,35 @@ router.get("/search", async (req: Request, res: Response) => {
       return res.json(offlineListResponse());
     }
 
+    const like = likeSearchPattern(q);
+    const compactLike = compactLikeSearchPattern(q);
+    const sequelize = getActiveSequelize();
+    const likeSql = sequelize.escape(like);
+    const compactSql = compactLike ? sequelize.escape(compactLike) : null;
+    const attachmentMatchSql = [
+      `COALESCE(elem->>'fileName', '') ILIKE ${likeSql}`,
+      `COALESCE(elem->>'caption', '') ILIKE ${likeSql}`,
+      `COALESCE(elem->>'ocrText', '') ILIKE ${likeSql}`,
+      `COALESCE(elem->>'searchText', '') ILIKE ${likeSql}`,
+      `COALESCE(elem->>'searchCompact', '') ILIKE ${likeSql}`,
+    ];
+    if (compactSql) {
+      attachmentMatchSql.push(`COALESCE(elem->>'searchCompact', '') ILIKE ${compactSql}`);
+      attachmentMatchSql.push(
+        `regexp_replace(lower(COALESCE(elem->>'ocrText','') || COALESCE(elem->>'fileName','') || COALESCE(elem->>'caption','') || COALESCE(elem->>'searchText','')), '[^a-z0-9]', '', 'g') ILIKE ${compactSql}`,
+      );
+    }
+    const itemMatchSql = [
+      `COALESCE(qi.description, '') ILIKE ${likeSql}`,
+      `COALESCE(qi.optional_description, '') ILIKE ${likeSql}`,
+      `COALESCE(qi.product_code, '') ILIKE ${likeSql}`,
+    ];
+    if (compactSql) {
+      itemMatchSql.push(
+        `regexp_replace(lower(COALESCE(qi.description,'') || COALESCE(qi.optional_description,'') || COALESCE(qi.product_code,'')), '[^a-z0-9]', '', 'g') ILIKE ${compactSql}`,
+      );
+    }
+
     const records = await Quote.findAll({
       attributes: [
         "id",
@@ -127,21 +168,61 @@ router.get("/search", async (req: Request, res: Response) => {
         "address",
         "total",
         "status",
+        "internalAttachmentsJson",
       ],
       where: {
         [Op.or]: [
-          { quoteNumber: { [Op.iLike]: `%${q}%` } },
-          { customerName: { [Op.iLike]: `%${q}%` } },
-          { company: { [Op.iLike]: `%${q}%` } },
-          { email: { [Op.iLike]: `%${q}%` } },
-          { address: { [Op.iLike]: `%${q}%` } },
+          { quoteNumber: { [Op.iLike]: like } },
+          { customerName: { [Op.iLike]: like } },
+          { company: { [Op.iLike]: like } },
+          { email: { [Op.iLike]: like } },
+          { address: { [Op.iLike]: like } },
+          sequelize.literal(`EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE("internal_attachments_json", '[]'::jsonb)) AS elem
+            WHERE ${attachmentMatchSql.join(" OR ")}
+          )`),
+          sequelize.literal(`EXISTS (
+            SELECT 1
+            FROM quote_items qi
+            WHERE qi.quote_id = "Quote"."id"
+              AND (${itemMatchSql.join(" OR ")})
+          )`),
         ],
       },
       order: [["createdAt", "DESC"]],
       limit: 15,
     });
 
-    return res.json({ data: records });
+    return res.json({
+      data: records.map((record) => {
+        const json = record.toJSON() as {
+          id: string;
+          quoteNumber: string;
+          quoteDate: string | null;
+          customerName: string | null;
+          company: string | null;
+          email: string | null;
+          address: string | null;
+          total: string | number | null;
+          status: string;
+          internalAttachmentsJson?: unknown;
+        };
+        const attachments = normalizeInternalAttachments(json.internalAttachmentsJson);
+        return {
+          id: json.id,
+          quoteNumber: json.quoteNumber,
+          quoteDate: json.quoteDate,
+          customerName: json.customerName,
+          company: json.company,
+          email: json.email,
+          address: json.address,
+          total: json.total,
+          status: json.status,
+          attachmentHits: findAttachmentSearchHits(attachments, q).slice(0, 3),
+        };
+      }),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to search quotes";
     return res.status(500).json({ error: message });
@@ -377,6 +458,7 @@ const createQuote = async (req: Request, res: Response) => {
         phone: toStringOrNull(body.phone),
         address: toStringOrNull(body.address),
         notes: toStringOrNull(body.notes),
+        internalAttachmentsJson: parseInternalAttachmentsInput(body),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
         shippingLabel: toStringOrNull(pickBodyValue(body, "shipping_label", "shippingLabel")),
@@ -482,6 +564,12 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.phone !== undefined) updates.phone = (body.phone as string | null) ?? null;
     if (body.address !== undefined) updates.address = (body.address as string | null) ?? null;
     if (body.notes !== undefined) updates.notes = (body.notes as string | null) ?? null;
+    if (
+      pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") !== undefined ||
+      pickBodyValue(body, "internal_attachments", "internalAttachments") !== undefined
+    ) {
+      updates.internalAttachmentsJson = parseInternalAttachmentsInput(body);
+    }
     if (body.subtotal !== undefined) updates.subtotal = toDecimalStringOrNull(body.subtotal);
     if (body.shipping !== undefined) updates.shipping = toDecimalStringOrNull(body.shipping);
     if (pickBodyValue(body, "shipping_label", "shippingLabel") !== undefined) {

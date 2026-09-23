@@ -232,9 +232,10 @@ async function exportQuoteToPdf(quote) {
     doc.text(quote.quoteDate || "—", metaX + metaW * 0.75, valueY, {
         align: "center",
     });
-    // TO section (drawn before header line so tall customer blocks push content down)
-    const toX = pageWidth / 2 - 70;
+    // TO section: keep customer text in the middle column so it never overlaps QUOTE/DATE
+    const toX = margin + 175;
     const toY = 44;
+    const maxCustomerWidth = Math.max(80, metaX - toX - 12);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
     let yTo = toY + 18;
@@ -242,16 +243,13 @@ async function exportQuoteToPdf(quote) {
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean);
-    if (customerLines.length === 0) {
-        doc.text("—", toX, yTo, { align: "left" });
+    const wrappedCustomerLines = customerLines.length === 0
+        ? ["—"]
+        : customerLines.flatMap((line) => wrapPdfText(doc, line, maxCustomerWidth, 11));
+    wrappedCustomerLines.forEach((line) => {
+        doc.text(line, toX, yTo, { align: "left" });
         yTo += 14;
-    }
-    else {
-        customerLines.forEach((line) => {
-            doc.text(line, toX, yTo, { align: "left" });
-            yTo += 14;
-        });
-    }
+    });
     // Extra clearance so the rule sits below customer email descenders
     const headerBottom = Math.max(yLeft, metaY + metaH, yTo) + 20;
     doc.setDrawColor(209, 213, 219);
