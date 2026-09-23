@@ -193,3 +193,9 @@ export function compactLikeSearchPattern(query: string): string | null {
   if (compact.length < 4) return null;
   return `%${compact}%`;
 }
+
+
+
+
+
+

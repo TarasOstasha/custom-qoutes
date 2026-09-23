@@ -73,3 +73,8 @@ Insrt.md
 uploads/
 
 README.md
+
+dist-server/
+.playwright-test-profile/
+tmp-*
+*.traineddata
