@@ -9,6 +9,7 @@ import {
   scrapeVolusionStorefrontCart,
 } from "../services/scrapeStorefrontCart";
 import { Quote, QuoteItem, getActiveSequelize } from "../lib/models";
+import { normalizeSalesContact } from "../lib/mockQuote";
 import {
   duplicateQuoteNumberError,
   findQuoteByNumber,
@@ -471,6 +472,7 @@ const createQuote = async (req: Request, res: Response) => {
         estimateValidDays: toEstimateValidDaysOrNull(
           pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
         ),
+        salesContact: normalizeSalesContact(pickBodyValue(body, "sales_contact", "salesContact")),
         internalAttachmentsJson: parseInternalAttachmentsInput(body),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
@@ -584,6 +586,9 @@ router.put("/:id", async (req: Request, res: Response) => {
       updates.estimateValidDays = toEstimateValidDaysOrNull(
         pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
       );
+    }
+    if (pickBodyValue(body, "sales_contact", "salesContact") !== undefined) {
+      updates.salesContact = normalizeSalesContact(pickBodyValue(body, "sales_contact", "salesContact"));
     }
     if (
       pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") !== undefined ||

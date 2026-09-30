@@ -70,7 +70,16 @@ export type Quote = {
   quoteDate: string;
   /** How many days the printed estimate stays valid. Defaults to 30. */
   estimateValidDays?: number | null;
+  /** Staff member shown on the PDF as the sales contact. */
+  salesContact?: string | null;
 };
+
+export const SALES_CONTACTS = ["Manny", "Yelena", "Nikita", "Alex", "Yulia"] as const;
+
+export function normalizeSalesContact(value: unknown): string | null {
+  const name = String(value ?? "").trim();
+  return (SALES_CONTACTS as readonly string[]).includes(name) ? name : null;
+}
 
 export const DEFAULT_ESTIMATE_VALID_DAYS = 30;
 
@@ -206,6 +215,7 @@ export function createEmptyQuote(): Quote {
     internalNotes: null,
     internalAttachments: [],
     estimateValidDays: DEFAULT_ESTIMATE_VALID_DAYS,
+    salesContact: null,
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,

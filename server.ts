@@ -47,6 +47,7 @@ async function initializeRoutes(app: Express): Promise<void> {
       allowNull: true,
       defaultValue: 30,
     });
+    await addIfMissing("sales_contact", { type: DataTypes.STRING, allowNull: true });
   }
 
   sequelize

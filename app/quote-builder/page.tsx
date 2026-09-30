@@ -12,6 +12,8 @@ import {
   createEmptyQuote,
   defaultQuoteNumberFromDate,
   normalizeEstimateValidDays,
+  normalizeSalesContact,
+  SALES_CONTACTS,
   Quote,
   QuoteItem,
 } from "../../lib/mockQuote";
@@ -195,6 +197,8 @@ type ApiQuote = {
   internal_notes?: string | null;
   estimateValidDays?: number | string | null;
   estimate_valid_days?: number | string | null;
+  salesContact?: string | null;
+  sales_contact?: string | null;
   internalAttachmentsJson?: unknown;
   internal_attachments_json?: unknown;
   subtotal: number | string | null;
@@ -1237,6 +1241,7 @@ export default function QuoteBuilderPage() {
       notes: quote.notes ?? null,
       internal_notes: quote.internalNotes ?? null,
       estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
+      sales_contact: normalizeSalesContact(quote.salesContact),
       internal_attachments_json: normalizeInternalAttachments(quote.internalAttachments),
       subtotal: Number(totals.subtotal),
       shipping: Number(totals.shippingTotal),
@@ -1495,6 +1500,7 @@ export default function QuoteBuilderPage() {
         estimateValidDays: normalizeEstimateValidDays(
           data.estimateValidDays ?? data.estimate_valid_days,
         ),
+        salesContact: normalizeSalesContact(data.salesContact ?? data.sales_contact),
         internalAttachments: normalizeInternalAttachments(
           data.internalAttachmentsJson ?? data.internal_attachments_json,
         ),
@@ -1794,7 +1800,40 @@ export default function QuoteBuilderPage() {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="section grid-4">
+        <div className="section">
+          <div style={{ maxWidth: 280, marginBottom: 14 }}>
+            <label htmlFor="sales-contact">Sales Contact:</label>
+            <select
+              id="sales-contact"
+              value={quote.salesContact ?? ""}
+              onChange={(e) =>
+                setQuote((prev) => ({
+                  ...prev,
+                  salesContact: normalizeSalesContact(e.target.value),
+                }))
+              }
+              style={{
+                width: "100%",
+                marginTop: 6,
+                border: "1px solid #cbd5e1",
+                borderRadius: 6,
+                padding: "8px 10px",
+                fontSize: 14,
+                font: "inherit",
+                background: "#fff",
+                color: "#1f2937",
+                cursor: "pointer",
+              }}
+            >
+              <option value="">Select</option>
+              {SALES_CONTACTS.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid-4">
           <div>
             <label>Quote #</label>
             <input
@@ -1838,6 +1877,7 @@ export default function QuoteBuilderPage() {
           <div>
             <label>Version</label>
             <input value={String(quote.version)} readOnly />
+          </div>
           </div>
         </div>
 

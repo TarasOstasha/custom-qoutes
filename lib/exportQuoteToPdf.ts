@@ -280,6 +280,11 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.text("sales@xyzdisplays.com", margin, yLeft);
   yLeft += 14;
   doc.text("Phone: (973) 515-5151", margin, yLeft);
+  const salesContact = quote.salesContact?.trim();
+  if (salesContact) {
+    yLeft += 14;
+    doc.text(`Sales Contact: ${salesContact}`, margin, yLeft);
+  }
 
   // QUOTE/DATE
   const metaW = 170;
