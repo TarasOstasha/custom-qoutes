@@ -43,6 +43,8 @@ export type Quote = {
   customerPhone?: string | null;
   customerAddress?: string | null;
   notes?: string | null;
+  /** Staff-only notes. Never included on the estimate, PDF, or Excel. */
+  internalNotes?: string | null;
   /** Internal files/screenshots for staff use only — never included in PDF/Excel export. */
   internalAttachments?: QuoteInternalAttachment[] | null;
   subtotal: number;
@@ -201,6 +203,7 @@ export function createEmptyQuote(): Quote {
     customerPhone: null,
     customerAddress: null,
     notes: null,
+    internalNotes: null,
     internalAttachments: [],
     estimateValidDays: DEFAULT_ESTIMATE_VALID_DAYS,
     subtotal: 0,

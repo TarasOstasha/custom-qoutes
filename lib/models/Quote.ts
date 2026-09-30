@@ -13,6 +13,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare phone: string | null;
   declare address: string | null;
   declare notes: string | null;
+  declare internalNotes: string | null;
   declare estimateValidDays: CreationOptional<number | null>;
   declare internalAttachmentsJson: unknown | null;
   declare subtotal: string | null;
@@ -84,6 +85,11 @@ Quote.init(
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+    internalNotes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "internal_notes",
     },
     estimateValidDays: {
       type: DataTypes.INTEGER,

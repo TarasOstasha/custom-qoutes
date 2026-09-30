@@ -41,6 +41,7 @@ async function initializeRoutes(app: Express): Promise<void> {
     await addIfMissing("tax_label", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("tax_description", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("internal_attachments_json", { type: DataTypes.JSONB, allowNull: true });
+    await addIfMissing("internal_notes", { type: DataTypes.TEXT, allowNull: true });
     await addIfMissing("estimate_valid_days", {
       type: DataTypes.INTEGER,
       allowNull: true,

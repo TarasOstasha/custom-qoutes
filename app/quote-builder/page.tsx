@@ -191,6 +191,8 @@ type ApiQuote = {
   phone: string | null;
   address: string | null;
   notes: string | null;
+  internalNotes?: string | null;
+  internal_notes?: string | null;
   estimateValidDays?: number | string | null;
   estimate_valid_days?: number | string | null;
   internalAttachmentsJson?: unknown;
@@ -1233,6 +1235,7 @@ export default function QuoteBuilderPage() {
       phone: quote.customerPhone ?? null,
       address: quote.customerAddress ?? null,
       notes: quote.notes ?? null,
+      internal_notes: quote.internalNotes ?? null,
       estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
       internal_attachments_json: normalizeInternalAttachments(quote.internalAttachments),
       subtotal: Number(totals.subtotal),
@@ -1488,6 +1491,7 @@ export default function QuoteBuilderPage() {
         customerPhone: data.phone ?? null,
         customerAddress: data.address ?? null,
         notes: data.notes ?? null,
+        internalNotes: data.internalNotes ?? data.internal_notes ?? null,
         estimateValidDays: normalizeEstimateValidDays(
           data.estimateValidDays ?? data.estimate_valid_days,
         ),
@@ -2414,16 +2418,42 @@ export default function QuoteBuilderPage() {
           }}
         >
           <div style={{ maxWidth: 480, minWidth: 0 }}>
-            <label htmlFor="quote-notes-builder">Notes</label>
+            <label htmlFor="quote-internal-notes-builder">Internal notes</label>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
+              For staff only. Not included on the estimate, PDF, or Excel.
+            </div>
+            <textarea
+              id="quote-internal-notes-builder"
+              value={quote.internalNotes ?? ""}
+              onChange={(e) => setQuote((prev) => ({ ...prev, internalNotes: e.target.value }))}
+              placeholder="Add notes for your team"
+              style={{
+                marginTop: 8,
+                width: "100%",
+                minHeight: 88,
+                border: "1px solid #d1d5db",
+                borderRadius: 6,
+                padding: "10px 12px",
+                font: "inherit",
+                resize: "vertical",
+                background: "#fff",
+              }}
+            />
+            <label htmlFor="quote-notes-builder" style={{ marginTop: 14 }}>
+              Notes
+            </label>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
+              Shown on the estimate, PDF, and Excel.
+            </div>
             <textarea
               id="quote-notes-builder"
               value={quote.notes ?? ""}
               onChange={(e) => setQuote((prev) => ({ ...prev, notes: e.target.value }))}
-              placeholder="Add internal or customer-facing notes"
+              placeholder="Add notes for the customer"
               style={{
                 marginTop: 8,
                 width: "100%",
-                minHeight: 108,
+                minHeight: 88,
                 border: "1px solid #d1d5db",
                 borderRadius: 6,
                 padding: "10px 12px",

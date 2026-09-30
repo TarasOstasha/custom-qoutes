@@ -185,6 +185,7 @@ router.get("/search", async (req: Request, res: Response) => {
           { company: { [Op.iLike]: like } },
           { email: { [Op.iLike]: like } },
           { address: { [Op.iLike]: like } },
+          { internalNotes: { [Op.iLike]: like } },
           sequelize.literal(`EXISTS (
             SELECT 1
             FROM jsonb_array_elements(COALESCE("internal_attachments_json", '[]'::jsonb)) AS elem
@@ -466,6 +467,7 @@ const createQuote = async (req: Request, res: Response) => {
         phone: toStringOrNull(body.phone),
         address: toStringOrNull(body.address),
         notes: toStringOrNull(body.notes),
+        internalNotes: toStringOrNull(pickBodyValue(body, "internal_notes", "internalNotes")),
         estimateValidDays: toEstimateValidDaysOrNull(
           pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
         ),
@@ -575,6 +577,9 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.phone !== undefined) updates.phone = (body.phone as string | null) ?? null;
     if (body.address !== undefined) updates.address = (body.address as string | null) ?? null;
     if (body.notes !== undefined) updates.notes = (body.notes as string | null) ?? null;
+    if (pickBodyValue(body, "internal_notes", "internalNotes") !== undefined) {
+      updates.internalNotes = toStringOrNull(pickBodyValue(body, "internal_notes", "internalNotes"));
+    }
     if (pickBodyValue(body, "estimate_valid_days", "estimateValidDays") !== undefined) {
       updates.estimateValidDays = toEstimateValidDaysOrNull(
         pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
