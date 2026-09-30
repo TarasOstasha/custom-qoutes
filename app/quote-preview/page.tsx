@@ -78,6 +78,7 @@ export default function QuotePreviewPage() {
             <div>Montville, NJ 07045</div>
             <div>sales@xyzdisplays.com</div>
             <div>Phone: (973) 515-5151</div>
+            {quote.salesContact?.trim() ? <div>Sales Contact: {quote.salesContact.trim()}</div> : null}
           </div>
           
 
