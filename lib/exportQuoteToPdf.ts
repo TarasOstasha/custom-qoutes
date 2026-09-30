@@ -14,6 +14,21 @@ function safeFilenamePart(s: string): string {
   return t || "quote";
 }
 
+/** US date and time for the PDF footer, e.g. `9/30/2026 1:32 PM`. */
+function formatUsExportDateTime(date: Date): string {
+  const datePart = date.toLocaleDateString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${datePart} ${timePart}`;
+}
+
 function money(value: number): string {
   return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -574,8 +589,12 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
 
   doc.setFontSize(11);
   doc.setTextColor(107, 114, 128);
-  doc.text(formatEstimateValidLabel(quote.estimateValidDays), pageWidth / 2, pageHeight - 24, {
+  const footerY = pageHeight - 24;
+  doc.text(formatEstimateValidLabel(quote.estimateValidDays), pageWidth / 2, footerY, {
     align: "center",
+  });
+  doc.text(formatUsExportDateTime(new Date()), pageWidth - margin, footerY, {
+    align: "right",
   });
 
   const filename = `Estimate-${safeFilenamePart(quote.quoteNumber)}.pdf`;
