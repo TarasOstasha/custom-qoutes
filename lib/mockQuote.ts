@@ -66,7 +66,24 @@ export type Quote = {
   createdAt: string;
   updatedAt: string;
   quoteDate: string;
+  /** How many days the printed estimate stays valid. Defaults to 30. */
+  estimateValidDays?: number | null;
 };
+
+export const DEFAULT_ESTIMATE_VALID_DAYS = 30;
+
+export function normalizeEstimateValidDays(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(String(value ?? "").trim());
+  if (!Number.isFinite(n)) return DEFAULT_ESTIMATE_VALID_DAYS;
+  const days = Math.round(n);
+  if (days < 1) return DEFAULT_ESTIMATE_VALID_DAYS;
+  return Math.min(days, 9999);
+}
+
+export function formatEstimateValidLabel(days: number | null | undefined): string {
+  const n = normalizeEstimateValidDays(days);
+  return `Estimate Valid For ${n} ${n === 1 ? "Day" : "Days"}`;
+}
 
 const now = new Date().toISOString();
 
@@ -185,6 +202,7 @@ export function createEmptyQuote(): Quote {
     customerAddress: null,
     notes: null,
     internalAttachments: [],
+    estimateValidDays: DEFAULT_ESTIMATE_VALID_DAYS,
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,

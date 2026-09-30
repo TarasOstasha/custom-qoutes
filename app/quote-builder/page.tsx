@@ -8,7 +8,13 @@ import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFrom
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import QuoteInternalAttachments from "../../components/QuoteInternalAttachments";
-import { createEmptyQuote, defaultQuoteNumberFromDate, Quote, QuoteItem } from "../../lib/mockQuote";
+import {
+  createEmptyQuote,
+  defaultQuoteNumberFromDate,
+  normalizeEstimateValidDays,
+  Quote,
+  QuoteItem,
+} from "../../lib/mockQuote";
 import {
   normalizeInternalAttachments,
   type QuoteAttachmentSearchHit,
@@ -185,6 +191,8 @@ type ApiQuote = {
   phone: string | null;
   address: string | null;
   notes: string | null;
+  estimateValidDays?: number | string | null;
+  estimate_valid_days?: number | string | null;
   internalAttachmentsJson?: unknown;
   internal_attachments_json?: unknown;
   subtotal: number | string | null;
@@ -451,6 +459,7 @@ export default function QuoteBuilderPage() {
   const [taxRowLabelDraft, setTaxRowLabelDraft] = useState<string | null>(null);
   const [taxAmountDraft, setTaxAmountDraft] = useState<string | null>(null);
   const [shippingAmountDraft, setShippingAmountDraft] = useState<string | null>(null);
+  const [estimateValidDaysDraft, setEstimateValidDaysDraft] = useState<string | null>(null);
   const shippingDestinationText = formatShippingDestination(quote.shippingState, quote.shippingZip);
   const shippingDestinationDisplay =
     shippingDestinationDraft !== null ? shippingDestinationDraft : shippingDestinationText;
@@ -1224,6 +1233,7 @@ export default function QuoteBuilderPage() {
       phone: quote.customerPhone ?? null,
       address: quote.customerAddress ?? null,
       notes: quote.notes ?? null,
+      estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
       internal_attachments_json: normalizeInternalAttachments(quote.internalAttachments),
       subtotal: Number(totals.subtotal),
       shipping: Number(totals.shippingTotal),
@@ -1478,6 +1488,9 @@ export default function QuoteBuilderPage() {
         customerPhone: data.phone ?? null,
         customerAddress: data.address ?? null,
         notes: data.notes ?? null,
+        estimateValidDays: normalizeEstimateValidDays(
+          data.estimateValidDays ?? data.estimate_valid_days,
+        ),
         internalAttachments: normalizeInternalAttachments(
           data.internalAttachmentsJson ?? data.internal_attachments_json,
         ),
@@ -1509,6 +1522,7 @@ export default function QuoteBuilderPage() {
         taxTotal: draft.taxTotal,
       });
       setQuote({ ...draft, ...recalculated });
+      setEstimateValidDaysDraft(null);
       setLoadedQuoteId(data.id);
       setOriginalLoadedQuoteNumber(readApiQuoteNumber(data) || null);
       setLineItemOptions({});
@@ -1660,6 +1674,7 @@ export default function QuoteBuilderPage() {
                 setLoadedQuoteId(null);
                 setOriginalLoadedQuoteNumber(null);
                 setCalculatorTarget(null);
+                setEstimateValidDaysDraft(null);
                 setQuote(createEmptyQuote());
               }}
             >
@@ -2580,7 +2595,61 @@ export default function QuoteBuilderPage() {
             </div>
           </div>
         </div>
-        <div className="section" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+        <div className="section" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <label
+            htmlFor="estimate-valid-days"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: 0, color: "#475569", fontSize: 14 }}
+          >
+            Estimate Valid For
+            <input
+              id="estimate-valid-days"
+              type="text"
+              inputMode="numeric"
+              aria-label="Estimate valid for days"
+              value={estimateValidDaysDraft ?? String(normalizeEstimateValidDays(quote.estimateValidDays))}
+              onFocus={() => setEstimateValidDaysDraft(String(normalizeEstimateValidDays(quote.estimateValidDays)))}
+              onBlur={() => {
+                if (estimateValidDaysDraft !== null) {
+                  const parsed = Number(estimateValidDaysDraft.trim());
+                  if (Number.isFinite(parsed) && parsed >= 1) {
+                    setQuote((prev) => ({
+                      ...prev,
+                      estimateValidDays: normalizeEstimateValidDays(parsed),
+                    }));
+                  }
+                }
+                setEstimateValidDaysDraft(null);
+              }}
+              onChange={(e) => {
+                const next = e.target.value.replace(/[^\d]/g, "").slice(0, 4);
+                setEstimateValidDaysDraft(next);
+                if (next) {
+                  setQuote((prev) => ({
+                    ...prev,
+                    estimateValidDays: normalizeEstimateValidDays(next),
+                  }));
+                }
+              }}
+              style={{
+                width: 64,
+                textAlign: "center",
+                border: "1px solid #cbd5e1",
+                borderRadius: 6,
+                padding: "6px 8px",
+                font: "inherit",
+                background: "#fff",
+                color: "#1f2937",
+              }}
+            />
+            {normalizeEstimateValidDays(
+              estimateValidDaysDraft && Number(estimateValidDaysDraft) >= 1
+                ? estimateValidDaysDraft
+                : quote.estimateValidDays,
+            ) === 1
+              ? "Day"
+              : "Days"}
+          </label>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginLeft: "auto" }}>
           {saveQuoteSuccess ? <span style={{ color: "#166534", fontWeight: 600 }}>{saveQuoteSuccess}</span> : null}
           {saveQuoteError ? <span style={{ color: "#b91c1c", fontWeight: 600 }}>{saveQuoteError}</span> : null}
           {loadedQuoteId ? (
@@ -2603,6 +2672,7 @@ export default function QuoteBuilderPage() {
           >
             {saveQuoteLoading ? "Saving..." : "SAVE QUOTE"}
           </button>
+          </div>
         </div>
       </div>
     </main>

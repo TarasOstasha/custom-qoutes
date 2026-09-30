@@ -5,7 +5,7 @@ import { useLayoutEffect, useState } from "react";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import { formatQuoteLineDescription } from "../../lib/formatQuoteLineDescription";
-import { createEmptyQuote, type Quote } from "../../lib/mockQuote";
+import { createEmptyQuote, formatEstimateValidLabel, type Quote } from "../../lib/mockQuote";
 import { formatCustomerInfoBlock } from "../../lib/customerInfo";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
@@ -262,7 +262,7 @@ export default function QuotePreviewPage() {
         </div>
 
         <div className="preview-block muted" style={{ textAlign: "center" }}>
-          Estimate Valid For 30 Days
+          {formatEstimateValidLabel(quote.estimateValidDays)}
         </div>
       </section>
     </main>

@@ -2,7 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getApiBase } from "./apiBase";
 import { formatCustomerInfoBlock } from "./customerInfo";
-import type { Quote } from "./mockQuote";
+import { formatEstimateValidLabel, type Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
 import { getQuoteItemImageUrls } from "./quoteItemImages";
@@ -574,7 +574,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
 
   doc.setFontSize(11);
   doc.setTextColor(107, 114, 128);
-  doc.text("Estimate Valid For 30 Days", pageWidth / 2, pageHeight - 24, {
+  doc.text(formatEstimateValidLabel(quote.estimateValidDays), pageWidth / 2, pageHeight - 24, {
     align: "center",
   });
 

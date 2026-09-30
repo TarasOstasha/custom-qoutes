@@ -48,6 +48,14 @@ const toDecimalStringOrNull = (value: unknown): string | null => {
   return num === null ? null : String(num);
 };
 
+const toEstimateValidDaysOrNull = (value: unknown): number | null => {
+  const num = toNumberOrNull(value);
+  if (num === null) return null;
+  const days = Math.round(num);
+  if (days < 1) return null;
+  return Math.min(days, 9999);
+};
+
 const pickBodyValue = (body: Record<string, unknown>, snake: string, camel: string): unknown =>
   body[snake] !== undefined ? body[snake] : body[camel];
 
@@ -458,6 +466,9 @@ const createQuote = async (req: Request, res: Response) => {
         phone: toStringOrNull(body.phone),
         address: toStringOrNull(body.address),
         notes: toStringOrNull(body.notes),
+        estimateValidDays: toEstimateValidDaysOrNull(
+          pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
+        ),
         internalAttachmentsJson: parseInternalAttachmentsInput(body),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
@@ -564,6 +575,11 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.phone !== undefined) updates.phone = (body.phone as string | null) ?? null;
     if (body.address !== undefined) updates.address = (body.address as string | null) ?? null;
     if (body.notes !== undefined) updates.notes = (body.notes as string | null) ?? null;
+    if (pickBodyValue(body, "estimate_valid_days", "estimateValidDays") !== undefined) {
+      updates.estimateValidDays = toEstimateValidDaysOrNull(
+        pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
+      );
+    }
     if (
       pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") !== undefined ||
       pickBodyValue(body, "internal_attachments", "internalAttachments") !== undefined

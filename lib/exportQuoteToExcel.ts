@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { getApiBase } from "./apiBase";
 import { formatCustomerInfoBlock } from "./customerInfo";
-import type { Quote } from "./mockQuote";
+import { formatEstimateValidLabel, type Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
 import { getQuoteItemImageUrls } from "./quoteItemImages";
@@ -422,7 +422,7 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
 
   row += 1;
   ws.mergeCells(`A${row}:E${row}`);
-  ws.getCell(`A${row}`).value = "Estimate Valid For 30 Days";
+  ws.getCell(`A${row}`).value = formatEstimateValidLabel(quote.estimateValidDays);
   ws.getCell(`A${row}`).alignment = { horizontal: "center" };
   ws.getCell(`A${row}`).font = { color: { argb: "FF6B7280" } };
 
