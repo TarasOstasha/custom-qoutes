@@ -191,19 +191,13 @@ export const mockQuote: Quote = {
   ],
 };
 
-/** Default Quote # from the quote date field (e.g. `Quote 8/31/2026`). */
-export function defaultQuoteNumberFromDate(quoteDate: string): string {
-  const date = quoteDate.trim() || new Date().toLocaleDateString("en-US");
-  return `Quote ${date}`;
-}
-
 /** Fresh quote for builder / after clearing stored draft. */
 export function createEmptyQuote(): Quote {
   const t = new Date().toISOString();
   const quoteDate = new Date().toLocaleDateString("en-US");
   return {
     id: "q_draft",
-    quoteNumber: defaultQuoteNumberFromDate(quoteDate),
+    quoteNumber: "",
     status: "draft",
     version: 1,
     customerName: null,

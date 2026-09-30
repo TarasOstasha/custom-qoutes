@@ -10,7 +10,6 @@ import QuoteExportButtons from "../../components/QuoteExportButtons";
 import QuoteInternalAttachments from "../../components/QuoteInternalAttachments";
 import {
   createEmptyQuote,
-  defaultQuoteNumberFromDate,
   normalizeEstimateValidDays,
   normalizeSalesContact,
   SALES_CONTACTS,
@@ -58,6 +57,7 @@ import {
   saveQuoteDraft,
 } from "../../lib/quotePreviewStorage";
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
+import { isAutoDateQuoteNumber } from "../../lib/sequentialQuoteNumber";
 import { collectOptionsForCartLine, deserializeQuoteItemFromDb, mapCartRowsToQuoteItems } from "../../lib/cartImport";
 import AddPopupWindow from "../../components/AddPopupWindow";
 import QuoteCalculator, { PriceCalculatorTrigger } from "../../components/QuoteCalculator";
@@ -243,6 +243,12 @@ function readApiQuoteNumber(data: { quoteNumber?: string; quote_number?: string 
   return normalizeQuoteNumber(data.quoteNumber ?? data.quote_number);
 }
 
+function shouldAssignNextQuoteNumber(candidate: { id: string; quoteNumber: string }): boolean {
+  if (dbQuoteIdPattern.test(candidate.id)) return false;
+  const quoteNumber = candidate.quoteNumber.trim();
+  return !quoteNumber || isAutoDateQuoteNumber(quoteNumber);
+}
+
 export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
   const [loadedQuoteId, setLoadedQuoteId] = useState<string | null>(null);
@@ -270,6 +276,42 @@ export default function QuoteBuilderPage() {
       setOriginalLoadedQuoteNumber(stored.quoteNumber?.trim() || null);
       skipNextPersist.current = true;
     }
+  }, []);
+
+  const [quoteNumberNotice, setQuoteNumberNotice] = useState<string | null>(null);
+
+  const assignNextQuoteNumber = async (options?: { force?: boolean }): Promise<string | null> => {
+    setQuoteNumberNotice(null);
+    try {
+      const response = await fetch(`${getApiBase()}/api/quotes/next-number`);
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      const parsed = contentType.includes("application/json")
+        ? ((await response.json()) as { quoteNumber?: string; error?: string; offline?: boolean })
+        : null;
+      if (!response.ok || !parsed?.quoteNumber) {
+        throw new Error(parsed?.error ?? "Could not assign the next quote number");
+      }
+      const quoteNumber = parsed.quoteNumber;
+      setQuote((prev) => {
+        if (!options?.force && !shouldAssignNextQuoteNumber(prev)) return prev;
+        return { ...prev, quoteNumber };
+      });
+      return quoteNumber;
+    } catch (error) {
+      setQuoteNumberNotice(
+        error instanceof Error ? error.message : "Could not assign the next quote number",
+      );
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const stored = loadQuoteFromPreviewStorage();
+    const candidate = stored ?? createEmptyQuote();
+    if (!shouldAssignNextQuoteNumber(candidate)) return;
+    void assignNextQuoteNumber();
+    // Assign once when a new quote opens. Saved quotes and already numbered drafts are left alone.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1226,10 +1268,10 @@ export default function QuoteBuilderPage() {
     return results.some((row) => normalizeQuoteNumber(row.quoteNumber).toLowerCase() === target);
   };
 
-  const buildSavePayload = (options?: { forceNewQuote?: boolean }) => {
+  const buildSavePayload = (options?: { forceNewQuote?: boolean; quoteNumber?: string }) => {
     const isNewInsert = options?.forceNewQuote ?? !loadedQuoteId;
     return {
-      quote_number: quote.quoteNumber.trim(),
+      quote_number: (options?.quoteNumber ?? quote.quoteNumber).trim(),
       quote_date: quoteDateToInputValue(quote.quoteDate),
       status: quote.status,
       version: isNewInsert ? 1 : quote.version,
@@ -1263,7 +1305,7 @@ export default function QuoteBuilderPage() {
     method: "POST" | "PUT",
     url: string,
     successMessage: string,
-    options?: { forceNewQuote?: boolean },
+    options?: { forceNewQuote?: boolean; quoteNumber?: string },
   ) => {
     setSaveQuoteLoading(true);
     setSaveQuoteSuccess(null);
@@ -1344,7 +1386,19 @@ export default function QuoteBuilderPage() {
       return;
     }
     const quoteNum = normalizeQuoteNumber(quote.quoteNumber);
-    if (!quoteNum) {
+    let quoteNumberForSave = quoteNum;
+    if (
+      loadedQuoteId &&
+      quoteNum.toLowerCase() === normalizeQuoteNumber(originalLoadedQuoteNumber).toLowerCase()
+    ) {
+      const nextQuoteNumber = await assignNextQuoteNumber({ force: true });
+      if (!nextQuoteNumber) {
+        setSaveQuoteError("Could not assign the next quote number for the copy.");
+        return;
+      }
+      quoteNumberForSave = nextQuoteNumber;
+    }
+    if (!quoteNumberForSave) {
       setSaveQuoteError("Enter a quote number first.");
       return;
     }
@@ -1353,9 +1407,9 @@ export default function QuoteBuilderPage() {
     setSaveQuoteSuccess(null);
     setSaveQuoteError(null);
     try {
-      const exists = await quoteNumberExists(quoteNum);
+      const exists = await quoteNumberExists(quoteNumberForSave);
       if (exists) {
-        setSaveQuoteError(`Quote "${quoteNum}" already exists. Choose a different quote number.`);
+        setSaveQuoteError(`Quote "${quoteNumberForSave}" already exists. Choose a different quote number.`);
         return;
       }
     } catch (error) {
@@ -1369,8 +1423,8 @@ export default function QuoteBuilderPage() {
     await runSaveRequest(
       "POST",
       `${getApiBase()}/api/quotes`,
-      `New quote ${quoteNum} created.`,
-      { forceNewQuote: true },
+      `New quote ${quoteNumberForSave} created.`,
+      { forceNewQuote: true, quoteNumber: quoteNumberForSave },
     );
   };
 
@@ -1686,6 +1740,7 @@ export default function QuoteBuilderPage() {
                 setCalculatorTarget(null);
                 setEstimateValidDaysDraft(null);
                 setQuote(createEmptyQuote());
+                void assignNextQuoteNumber({ force: true });
               }}
             >
               Clear data
@@ -1839,7 +1894,11 @@ export default function QuoteBuilderPage() {
             <input
               value={quote.quoteNumber}
               onChange={(e) => setQuote((prev) => ({ ...prev, quoteNumber: e.target.value }))}
+              placeholder="Q0001"
             />
+            {quoteNumberNotice ? (
+              <div style={{ marginTop: 4, fontSize: 12, color: "#b91c1c" }}>{quoteNumberNotice}</div>
+            ) : null}
             {loadedQuoteId && originalLoadedQuoteNumber ? (
               <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
                 Loaded quote: {originalLoadedQuoteNumber}. Change Quote # and click Create new quote to save a
@@ -1853,20 +1912,10 @@ export default function QuoteBuilderPage() {
               type="date"
               value={quoteDateToInputValue(quote.quoteDate)}
               onChange={(e) =>
-                setQuote((prev) => {
-                  const nextDate = inputValueToQuoteDate(e.target.value);
-                  const prevDefault = defaultQuoteNumberFromDate(prev.quoteDate);
-                  const currentNum = prev.quoteNumber.trim();
-                  const stillAuto =
-                    !currentNum || currentNum === prevDefault;
-                  return {
-                    ...prev,
-                    quoteDate: nextDate,
-                    ...(stillAuto
-                      ? { quoteNumber: defaultQuoteNumberFromDate(nextDate) }
-                      : {}),
-                  };
-                })
+                setQuote((prev) => ({
+                  ...prev,
+                  quoteDate: inputValueToQuoteDate(e.target.value),
+                }))
               }
             />
           </div>

@@ -8,6 +8,7 @@ import {
   openVolusionStorefrontCartSession,
   scrapeVolusionStorefrontCart,
 } from "../services/scrapeStorefrontCart";
+import { allocateNextQuoteNumber } from "../lib/allocateNextQuoteNumber";
 import { Quote, QuoteItem, getActiveSequelize } from "../lib/models";
 import { normalizeSalesContact } from "../lib/mockQuote";
 import {
@@ -397,6 +398,23 @@ router.post("/identify-user", async (req: Request, res: Response) => {
     return res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to identify user";
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.get("/next-number", async (_req: Request, res: Response) => {
+  if (!(await isOfficePersistenceAvailable())) {
+    return res.status(503).json({
+      error: "Database is unavailable — cannot assign a quote number.",
+      offline: true,
+    });
+  }
+
+  try {
+    const quoteNumber = await allocateNextQuoteNumber();
+    return res.json({ quoteNumber });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to assign the next quote number";
     return res.status(500).json({ error: message });
   }
 });
