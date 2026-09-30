@@ -267,9 +267,12 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     );
   }
 
-  let yLeft = logoDataUrl ? 64 : 34;
+  let yLeft = logoDataUrl ? 50 : 20;
+  doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
+  doc.text("xyzDisplays", margin, yLeft);
+  yLeft += 14;
   doc.text("170 Changebridge Rd, Bldg A7", margin, yLeft);
   yLeft += 14;
   doc.text("Montville, NJ 07045", margin, yLeft);
