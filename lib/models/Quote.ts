@@ -16,6 +16,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare internalNotes: string | null;
   declare estimateValidDays: CreationOptional<number | null>;
   declare salesContact: string | null;
+  declare abandonedCartId: string | null;
   declare internalAttachmentsJson: unknown | null;
   declare subtotal: string | null;
   declare shipping: string | null;
@@ -102,6 +103,11 @@ Quote.init(
       type: DataTypes.STRING,
       allowNull: true,
       field: "sales_contact",
+    },
+    abandonedCartId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "abandoned_cart_id",
     },
     internalAttachmentsJson: {
       type: DataTypes.JSONB,

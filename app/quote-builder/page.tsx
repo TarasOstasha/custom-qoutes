@@ -59,6 +59,8 @@ import {
 import { mapQuoteItemsForCreate, normalizeQuoteNumber } from "../../lib/quoteSaveAction";
 import { isAutoDateQuoteNumber } from "../../lib/sequentialQuoteNumber";
 import { collectOptionsForCartLine, deserializeQuoteItemFromDb, mapCartRowsToQuoteItems } from "../../lib/cartImport";
+import { looksLikeCartId, looksLikeEmail, isAbandonedCartGuid } from "../../lib/abandonedCart";
+import type { AbandonedCartSummary } from "../../lib/abandonedCart";
 import AddPopupWindow from "../../components/AddPopupWindow";
 import QuoteCalculator, { PriceCalculatorTrigger } from "../../components/QuoteCalculator";
 
@@ -199,6 +201,8 @@ type ApiQuote = {
   estimate_valid_days?: number | string | null;
   salesContact?: string | null;
   sales_contact?: string | null;
+  abandonedCartId?: string | null;
+  abandoned_cart_id?: string | null;
   internalAttachmentsJson?: unknown;
   internal_attachments_json?: unknown;
   subtotal: number | string | null;
@@ -253,6 +257,7 @@ export default function QuoteBuilderPage() {
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
   const [loadedQuoteId, setLoadedQuoteId] = useState<string | null>(null);
   const [originalLoadedQuoteNumber, setOriginalLoadedQuoteNumber] = useState<string | null>(null);
+  const [abandonedCartQuery, setAbandonedCartQuery] = useState("");
   const skipNextPersist = useRef(false);
   const customImageInputRef = useRef<HTMLInputElement | null>(null);
   const [customImageTargetId, setCustomImageTargetId] = useState<string | null>(null);
@@ -263,6 +268,7 @@ export default function QuoteBuilderPage() {
       setQuote({
         ...stored,
         internalAttachments: normalizeInternalAttachments(stored.internalAttachments),
+        abandonedCartId: stored.abandonedCartId?.trim() || null,
         shippingMethod: resolveEffectiveShippingMethod(stored),
         shippingOptions: stored.shippingOptions?.length
           ? reconcileShippingSelectionWithTotal(
@@ -272,6 +278,7 @@ export default function QuoteBuilderPage() {
           ).shippingOptions ?? stored.shippingOptions
           : stored.shippingOptions ?? null,
       });
+      setAbandonedCartQuery(stored.abandonedCartId?.trim() || "");
       setLoadedQuoteId(dbQuoteIdPattern.test(stored.id) ? stored.id : null);
       setOriginalLoadedQuoteNumber(stored.quoteNumber?.trim() || null);
       skipNextPersist.current = true;
@@ -331,6 +338,11 @@ export default function QuoteBuilderPage() {
   const [clearCartLoading, setClearCartLoading] = useState(false);
   const [clearCartMessage, setClearCartMessage] = useState<string | null>(null);
   const [clearCartError, setClearCartError] = useState<string | null>(null);
+  const [abandonedCartSearchLoading, setAbandonedCartSearchLoading] = useState(false);
+  const [abandonedCartRebuildLoading, setAbandonedCartRebuildLoading] = useState(false);
+  const [abandonedCartSearchResults, setAbandonedCartSearchResults] = useState<AbandonedCartSummary[]>([]);
+  const [abandonedCartMessage, setAbandonedCartMessage] = useState<string | null>(null);
+  const [abandonedCartError, setAbandonedCartError] = useState<string | null>(null);
   const [calculatorTarget, setCalculatorTarget] = useState<CalculatorTarget | null>(null);
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
@@ -343,6 +355,7 @@ export default function QuoteBuilderPage() {
   const [searchResults, setSearchResults] = useState<QuoteSearchResult[]>([]);
   const [loadQuoteLoadingId, setLoadQuoteLoadingId] = useState<string | null>(null);
   const [liveSessionUrl, setLiveSessionUrl] = useState<string | null>(null);
+  const [storefrontLoginMessage, setStorefrontLoginMessage] = useState<string | null>(null);
   const [lastCartPayload, setLastCartPayload] = useState<CartPayload | null>(null);
   const [lineItemOptions, setLineItemOptions] = useState<Record<string, LineItemOptionState>>({});
 
@@ -725,6 +738,7 @@ export default function QuoteBuilderPage() {
           const data = (await response.json()) as CartPayload;
           if (Array.isArray(data.cartItems) && data.cartItems.length) {
             setLastCartPayload(data);
+            rememberAbandonedCartId(data.cartId);
             options = collectAvailableOptionsForItem(item, data.cartItems);
 
             // Attach scraped options onto the quote line so Get Options keeps working
@@ -985,7 +999,18 @@ export default function QuoteBuilderPage() {
   const addCustomItem = () => appendCustomLine("item");
   const addDiscountLine = () => appendCustomLine("discount");
 
+  /** Fill Load abandoned/live cart input + quote field from a CartIDLog GUID. */
+  const rememberAbandonedCartId = (cartId: string | null | undefined) => {
+    const id = String(cartId ?? "").trim();
+    if (!isAbandonedCartGuid(id)) return;
+    setAbandonedCartQuery(id);
+    setQuote((prev) =>
+      prev.abandonedCartId === id ? prev : { ...prev, abandonedCartId: id },
+    );
+  };
+
   const appendScrapedCartPayload = (payload: CartPayload) => {
+    rememberAbandonedCartId(payload.cartId);
     const now = new Date().toISOString();
     const mappedItems = mapCartRowsToQuoteItems({
       cartItems: payload.cartItems,
@@ -1112,6 +1137,7 @@ export default function QuoteBuilderPage() {
       const payload = await extractCartFromPage();
       console.log(payload);
       setLastCartPayload(payload);
+      rememberAbandonedCartId(payload.cartId);
       if (!cartPayloadHasImportableData(payload) && !cartPayloadHasShippingChoice(payload)) {
         return;
       }
@@ -1124,18 +1150,32 @@ export default function QuoteBuilderPage() {
   /** Playwright on the API uses a persistent Chromium profile (`VOLUSION_PLAYWRIGHT_USER_DATA_DIR`); no cookies in the request. */
   const openLiveCartSession = async () => {
     setOpenCartSessionLoading(true);
+    setStorefrontLoginMessage(null);
     try {
       const response = await fetch(`${getApiBase()}/api/cart/open-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = (await response.json()) as { opened?: boolean; url?: string; error?: string };
+      const data = (await response.json()) as {
+        opened?: boolean;
+        url?: string;
+        error?: string;
+        storefrontLogin?: { loggedIn?: boolean; email?: string | null; error?: string; skipped?: boolean };
+      };
       if (!response.ok) {
         alert(data?.error ?? "Failed to open cart session");
         return;
       }
       setLiveSessionUrl(data.url ?? null);
+      const login = data.storefrontLogin;
+      if (login?.loggedIn) {
+        setStorefrontLoginMessage(`Storefront logged in as ${login.email ?? "customer"}`);
+      } else if (login?.skipped) {
+        setStorefrontLoginMessage(null);
+      } else if (login?.error) {
+        setStorefrontLoginMessage(`Storefront login: ${login.error}`);
+      }
     } finally {
       setOpenCartSessionLoading(false);
     }
@@ -1214,6 +1254,7 @@ export default function QuoteBuilderPage() {
         return;
       }
       setLastCartPayload(data);
+      rememberAbandonedCartId(data.cartId);
       if (!cartPayloadHasImportableData(data) && !cartPayloadHasShippingChoice(data)) {
         return;
       }
@@ -1245,6 +1286,101 @@ export default function QuoteBuilderPage() {
       setIdentifiedEmail(data.email ?? null);
     } finally {
       setIdentifyLoading(false);
+    }
+  };
+
+  const rebuildAbandonedCart = async (cartId: string) => {
+    const id = cartId.trim();
+    if (!looksLikeCartId(id)) {
+      setAbandonedCartError("Enter a valid cart GUID");
+      return;
+    }
+    setAbandonedCartQuery(id);
+    setQuote((prev) => ({ ...prev, abandonedCartId: id }));
+    setAbandonedCartRebuildLoading(true);
+    setAbandonedCartError(null);
+    setAbandonedCartMessage(null);
+    try {
+      const response = await fetch(`${getApiBase()}/quotes/abandoned-carts/rebuild`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartId: id }),
+      });
+      const data = (await response.json()) as {
+        success?: boolean;
+        cartId?: string;
+        added?: Array<{ productCode: string }>;
+        failed?: Array<{ productCode: string; error?: string }>;
+        cartUrl?: string;
+        error?: string;
+      };
+      if (!response.ok && !(data.added && data.added.length > 0)) {
+        setAbandonedCartError(data?.error ?? "Failed to load cart into storefront");
+        return;
+      }
+      if (data.cartUrl) {
+        setLiveSessionUrl(data.cartUrl);
+      }
+      const addedCount = data.added?.length ?? 0;
+      const failedCount = data.failed?.length ?? 0;
+      const failedDetail =
+        failedCount > 0
+          ? ` Failed: ${(data.failed ?? [])
+              .map((row) => `${row.productCode}${row.error ? ` (${row.error})` : ""}`)
+              .join(", ")}.`
+          : "";
+      setAbandonedCartMessage(
+        `Loaded ${addedCount} product(s) into the storefront cart.${failedDetail} Open the cart to choose shipping.`,
+      );
+    } catch {
+      setAbandonedCartError("Failed to load cart into storefront");
+    } finally {
+      setAbandonedCartRebuildLoading(false);
+    }
+  };
+
+  const searchOrLoadAbandonedCart = async () => {
+    const value = abandonedCartQuery.trim();
+    setAbandonedCartError(null);
+    setAbandonedCartMessage(null);
+    setAbandonedCartSearchResults([]);
+
+    if (!value) {
+      setAbandonedCartError("Enter a cart GUID or customer email");
+      return;
+    }
+
+    if (looksLikeCartId(value)) {
+      await rebuildAbandonedCart(value);
+      return;
+    }
+
+    if (!looksLikeEmail(value)) {
+      setAbandonedCartError("Enter a valid cart GUID or email address");
+      return;
+    }
+
+    setAbandonedCartSearchLoading(true);
+    try {
+      const response = await fetch(`${getApiBase()}/quotes/abandoned-carts/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: value }),
+      });
+      const data = (await response.json()) as { carts?: AbandonedCartSummary[]; error?: string };
+      if (!response.ok) {
+        setAbandonedCartError(data?.error ?? "Search failed");
+        return;
+      }
+      const carts = Array.isArray(data.carts) ? data.carts : [];
+      setAbandonedCartSearchResults(carts);
+      if (!carts.length) {
+        setAbandonedCartMessage("No abandoned/live carts found for that email");
+      }
+    } catch {
+      setAbandonedCartError("Search failed");
+    } finally {
+      setAbandonedCartSearchLoading(false);
     }
   };
 
@@ -1284,6 +1420,7 @@ export default function QuoteBuilderPage() {
       internal_notes: quote.internalNotes ?? null,
       estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
       sales_contact: normalizeSalesContact(quote.salesContact),
+      abandoned_cart_id: quote.abandonedCartId?.trim() || null,
       internal_attachments_json: normalizeInternalAttachments(quote.internalAttachments),
       subtotal: Number(totals.subtotal),
       shipping: Number(totals.shippingTotal),
@@ -1555,6 +1692,8 @@ export default function QuoteBuilderPage() {
           data.estimateValidDays ?? data.estimate_valid_days,
         ),
         salesContact: normalizeSalesContact(data.salesContact ?? data.sales_contact),
+        abandonedCartId:
+          String(data.abandonedCartId ?? data.abandoned_cart_id ?? "").trim() || null,
         internalAttachments: normalizeInternalAttachments(
           data.internalAttachmentsJson ?? data.internal_attachments_json,
         ),
@@ -1589,6 +1728,7 @@ export default function QuoteBuilderPage() {
       setEstimateValidDaysDraft(null);
       setLoadedQuoteId(data.id);
       setOriginalLoadedQuoteNumber(readApiQuoteNumber(data) || null);
+      setAbandonedCartQuery(String(data.abandonedCartId ?? data.abandoned_cart_id ?? "").trim());
       setLineItemOptions({});
       setCalculatorTarget(null);
       setSearchQuery("");
@@ -1739,6 +1879,10 @@ export default function QuoteBuilderPage() {
                 setOriginalLoadedQuoteNumber(null);
                 setCalculatorTarget(null);
                 setEstimateValidDaysDraft(null);
+                setAbandonedCartQuery("");
+                setAbandonedCartSearchResults([]);
+                setAbandonedCartMessage(null);
+                setAbandonedCartError(null);
                 setQuote(createEmptyQuote());
                 void assignNextQuoteNumber({ force: true });
               }}
@@ -2421,7 +2565,8 @@ export default function QuoteBuilderPage() {
                   scrapeCartServerLoading ||
                   openCartSessionLoading ||
                   openLiveCartLoading ||
-                  identifyLoading
+                  identifyLoading ||
+                  abandonedCartRebuildLoading
                 }
               >
                 {scrapeCartServerLoading ? (
@@ -2442,12 +2587,113 @@ export default function QuoteBuilderPage() {
                   scrapeCartServerLoading ||
                   openCartSessionLoading ||
                   openLiveCartLoading ||
-                  identifyLoading
+                  identifyLoading ||
+                  abandonedCartRebuildLoading
                 }
                 style={{ marginLeft: 8 }}
               >
                 {clearCartLoading ? "Clearing cart..." : "Clear Cart"}
               </button>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label className="muted" style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
+                Load abandoned / live cart (GUID or email)
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={abandonedCartQuery}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setAbandonedCartQuery(value);
+                    const trimmed = value.trim();
+                    setQuote((prev) => ({
+                      ...prev,
+                      abandonedCartId: looksLikeCartId(trimmed) ? trimmed : prev.abandonedCartId,
+                    }));
+                  }}
+                  placeholder="Cart GUID or customer email"
+                  disabled={abandonedCartSearchLoading || abandonedCartRebuildLoading}
+                  style={{
+                    minWidth: 280,
+                    flex: "1 1 240px",
+                    padding: "8px 10px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: 6,
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void searchOrLoadAbandonedCart();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void searchOrLoadAbandonedCart()}
+                  disabled={abandonedCartSearchLoading || abandonedCartRebuildLoading}
+                >
+                  {abandonedCartRebuildLoading
+                    ? "Loading into cart…"
+                    : abandonedCartSearchLoading
+                      ? "Searching…"
+                      : looksLikeEmail(abandonedCartQuery.trim())
+                        ? "Search carts"
+                        : "Load into cart"}
+                </button>
+              </div>
+              {abandonedCartSearchResults.length > 0 ? (
+                <div
+                  style={{
+                    marginTop: 8,
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 6,
+                    maxHeight: 220,
+                    overflow: "auto",
+                  }}
+                >
+                  {abandonedCartSearchResults.map((cart) => (
+                    <button
+                      key={cart.cartId}
+                      type="button"
+                      onClick={() => void rebuildAbandonedCart(cart.cartId)}
+                      disabled={abandonedCartRebuildLoading}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 10px",
+                        border: "none",
+                        borderBottom: "1px solid #f1f5f9",
+                        background: "transparent",
+                        cursor: abandonedCartRebuildLoading ? "default" : "pointer",
+                      }}
+                    >
+                      <div style={{ fontFamily: "monospace", fontSize: 12 }}>{cart.cartId}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {[
+                          cart.itemCount != null ? `${cart.itemCount} item(s)` : null,
+                          cart.lastModified,
+                          cart.email,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {abandonedCartMessage ? (
+                <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>
+                  {abandonedCartMessage}
+                </div>
+              ) : null}
+              {abandonedCartError ? (
+                <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--danger, #b42318)" }}>
+                  {abandonedCartError}
+                </div>
+              ) : null}
             </div>
             {clearCartMessage ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>
@@ -2462,6 +2708,11 @@ export default function QuoteBuilderPage() {
             {liveSessionUrl ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                 Live session page: {liveSessionUrl}
+              </div>
+            ) : null}
+            {storefrontLoginMessage ? (
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                {storefrontLoginMessage}
               </div>
             ) : null}
           </div>

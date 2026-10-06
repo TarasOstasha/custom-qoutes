@@ -8,6 +8,12 @@ import {
   openVolusionStorefrontCartSession,
   scrapeVolusionStorefrontCart,
 } from "../services/scrapeStorefrontCart";
+import {
+  fetchAbandonedCartContents,
+  searchAbandonedCartsByEmail,
+} from "../services/volusionCartIdLog";
+import { rebuildStorefrontCartFromAbandonedCartId } from "../services/rebuildStorefrontCart";
+import { looksLikeCartId, looksLikeEmail } from "../lib/abandonedCart";
 import { allocateNextQuoteNumber } from "../lib/allocateNextQuoteNumber";
 import { Quote, QuoteItem, getActiveSequelize } from "../lib/models";
 import { normalizeSalesContact } from "../lib/mockQuote";
@@ -402,6 +408,56 @@ router.post("/identify-user", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/abandoned-carts/search", async (req: Request, res: Response) => {
+  try {
+    const email = String((req.body as { email?: string } | undefined)?.email ?? "").trim();
+    if (!looksLikeEmail(email)) {
+      return res.status(400).json({ error: "A valid email is required" });
+    }
+    const carts = await searchAbandonedCartsByEmail(email);
+    return res.json({ carts });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to search abandoned carts";
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.post("/abandoned-carts/contents", async (req: Request, res: Response) => {
+  try {
+    const cartId = String((req.body as { cartId?: string } | undefined)?.cartId ?? "").trim();
+    if (!looksLikeCartId(cartId)) {
+      return res.status(400).json({ error: "A valid cart GUID is required" });
+    }
+    const result = await fetchAbandonedCartContents(cartId);
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load abandoned cart contents";
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.post("/abandoned-carts/rebuild", async (req: Request, res: Response) => {
+  try {
+    const cartId = String((req.body as { cartId?: string } | undefined)?.cartId ?? "").trim();
+    if (!looksLikeCartId(cartId)) {
+      return res.status(400).json({ error: "A valid cart GUID is required" });
+    }
+    const result = await rebuildStorefrontCartFromAbandonedCartId(cartId);
+    const status = result.success || result.added.length > 0 ? 200 : 502;
+    return res.status(status).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to rebuild storefront cart";
+    return res.status(500).json({
+      success: false,
+      cartId: "",
+      added: [],
+      failed: [],
+      cartUrl: "",
+      error: message,
+    });
+  }
+});
+
 router.get("/next-number", async (_req: Request, res: Response) => {
   if (!(await isOfficePersistenceAvailable())) {
     return res.status(503).json({
@@ -491,6 +547,7 @@ const createQuote = async (req: Request, res: Response) => {
           pickBodyValue(body, "estimate_valid_days", "estimateValidDays"),
         ),
         salesContact: normalizeSalesContact(pickBodyValue(body, "sales_contact", "salesContact")),
+        abandonedCartId: toStringOrNull(pickBodyValue(body, "abandoned_cart_id", "abandonedCartId")),
         internalAttachmentsJson: parseInternalAttachmentsInput(body),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
@@ -607,6 +664,11 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
     if (pickBodyValue(body, "sales_contact", "salesContact") !== undefined) {
       updates.salesContact = normalizeSalesContact(pickBodyValue(body, "sales_contact", "salesContact"));
+    }
+    if (pickBodyValue(body, "abandoned_cart_id", "abandonedCartId") !== undefined) {
+      updates.abandonedCartId = toStringOrNull(
+        pickBodyValue(body, "abandoned_cart_id", "abandonedCartId"),
+      );
     }
     if (
       pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") !== undefined ||

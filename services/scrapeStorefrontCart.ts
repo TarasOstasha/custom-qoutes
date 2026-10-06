@@ -14,6 +14,15 @@ import {
   enrichPayloadWithShippingSpeedChoice,
   SHIPPING_SPEED_SELECT_SELECTOR,
 } from "../lib/extractShippingSpeedChoiceInBrowser";
+import {
+  extractAbandonedCartGuidFromText,
+  isAbandonedCartGuid,
+} from "../lib/abandonedCart";
+import {
+  configuredStorefrontEmail,
+  ensureVolusionStorefrontLogin,
+} from "./volusionStorefrontLogin";
+import { resolveAbandonedCartGuidByEmail } from "./volusionCartIdLog";
 
 const DEFAULT_CART_URL = "https://www.xyzdisplays.com/ShoppingCart.php";
 const STORE_HOME_URL = "https://www.xyzdisplays.com/";
@@ -99,6 +108,7 @@ async function getOrCreateLiveSession(options: ScrapeStorefrontCartOptions = {})
     livePage = existing ?? (await liveContext.newPage());
     await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
     await delay(500);
+    await ensureVolusionStorefrontLogin(livePage);
   }
 
   return livePage;
@@ -113,15 +123,28 @@ export async function openVolusionStorefrontCartSession(
   return { opened: true, url: page.url() };
 }
 
+/** Shared live Playwright cart page for rebuild / scrape flows. */
+export async function getVolusionStorefrontLivePage(
+  options: ScrapeStorefrontCartOptions = {},
+): Promise<Page> {
+  return getOrCreateLiveSession(options);
+}
+
 /**
  * Open a manual, visible Playwright session on storefront homepage.
  * Keeps the browser/context alive for user interaction.
  */
-export async function openVisibleVolusionHomepageSession(): Promise<{ opened: true; url: string }> {
+export async function openVisibleVolusionHomepageSession(): Promise<{
+  opened: true;
+  url: string;
+  storefrontLogin?: { loggedIn: boolean; email: string | null; error?: string };
+}> {
   const context = await launchVisiblePersistentContext();
   livePage = await context.newPage();
   await livePage.goto(STORE_HOME_URL, { waitUntil: "load", timeout: 90_000 });
-  return { opened: true, url: livePage.url() };
+  const storefrontLogin = await ensureVolusionStorefrontLogin(livePage);
+  await livePage.goto(STORE_HOME_URL, { waitUntil: "load", timeout: 90_000 }).catch(() => undefined);
+  return { opened: true, url: livePage.url(), storefrontLogin };
 }
 
 /**
@@ -134,6 +157,7 @@ export async function openVisibleVolusionCartSession(
   const cartUrl = resolveCartUrl(options);
 
   const navigateCart = async (page: Page) => {
+    await ensureVolusionStorefrontLogin(page);
     await page.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
     await delay(500);
     return { opened: true as const, url: page.url() };
@@ -322,6 +346,54 @@ async function enrichCartItemOptionsFromModal(page: Page, payload: CartPayload):
 }
 
 /**
+ * Prefer CartIDLog UUID from Playwright cookies / storage over line-level CartIDs.
+ */
+async function resolveAbandonedCartGuidFromLivePage(page: Page): Promise<string | null> {
+  try {
+    const cookies = await page.context().cookies();
+    for (const cookie of cookies) {
+      const fromValue = extractAbandonedCartGuidFromText(cookie.value);
+      if (fromValue) return fromValue;
+      const fromName = extractAbandonedCartGuidFromText(cookie.name);
+      if (fromName) return fromName;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const fromDom = await page.evaluate(() => {
+      const guidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+      const pick = (raw: string): string | null => {
+        try {
+          const decoded = decodeURIComponent(raw);
+          return decoded.match(guidRe)?.[0] ?? null;
+        } catch {
+          return raw.match(guidRe)?.[0] ?? null;
+        }
+      };
+      for (const part of String(document.cookie ?? "").split(";")) {
+        const value = part.split("=").slice(1).join("=").trim();
+        const found = pick(value);
+        if (found) return found;
+      }
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        const found = pick(localStorage.getItem(key) ?? "") || pick(key);
+        if (found) return found;
+      }
+      return null;
+    });
+    if (fromDom && isAbandonedCartGuid(fromDom)) return fromDom;
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+/**
  * Scrape cart data from the live opened Playwright session.
  */
 export async function scrapeVolusionStorefrontCart(
@@ -361,10 +433,28 @@ export async function scrapeVolusionStorefrontCart(
   await enrichCartItemOptionsFromModal(page, raw);
   await enrichPayloadWithShippingSpeedChoice(page, raw);
 
+  if (!isAbandonedCartGuid(raw.cartId)) {
+    const fromSession = await resolveAbandonedCartGuidFromLivePage(page);
+    if (fromSession) {
+      raw.cartId = fromSession;
+    } else {
+      const email = configuredStorefrontEmail();
+      if (email) {
+        try {
+          const fromEmail = await resolveAbandonedCartGuidByEmail(email);
+          if (fromEmail) raw.cartId = fromEmail;
+        } catch (error) {
+          console.error("[scrape-cart] abandoned cart GUID email resolve failed:", error);
+        }
+      }
+    }
+  }
+
   if (debug) {
     console.error("[scrape-cart] shippingTotal:", raw.shippingTotal);
     console.error("[scrape-cart] selectedShippingValue:", raw.selectedShippingValue ?? null);
     console.error("[scrape-cart] shippingOptions:", raw.shippingOptions?.length ?? 0);
+    console.error("[scrape-cart] cartId:", raw.cartId);
     console.error(
       "[scrape-cart] item options:",
       raw.cartItems.map((item) => ({

@@ -72,6 +72,8 @@ export type Quote = {
   estimateValidDays?: number | null;
   /** Staff member shown on the PDF as the sales contact. */
   salesContact?: string | null;
+  /** Volusion Abandoned/Live Cart GUID linked to this quote. */
+  abandonedCartId?: string | null;
 };
 
 export const SALES_CONTACTS = ["Manny", "Yelena", "Nikita", "Alex", "Yulia"] as const;
@@ -110,6 +112,7 @@ export const mockQuote: Quote = {
   customerAddress: "170 Changebridge Rd, Bldg A7\nMontville, NJ 07045",
   notes: "Estimate valid for 30 days",
   internalAttachments: [],
+  abandonedCartId: null,
   subtotal: 2992.5,
   discountTotal: 607.5,
   shippingTotal: 346.32,
@@ -210,6 +213,7 @@ export function createEmptyQuote(): Quote {
     internalAttachments: [],
     estimateValidDays: DEFAULT_ESTIMATE_VALID_DAYS,
     salesContact: null,
+    abandonedCartId: null,
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,

@@ -522,6 +522,42 @@ export async function extractCartPayloadInBrowser(): Promise<CartPayload> {
   ) as HTMLInputElement | null;
   if (hid?.value?.trim()) cartId = hid.value.trim();
 
+  // Prefer Abandoned/Live Cart UUID from cookies / storage when present.
+  try {
+    const guidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    const pickGuid = (raw: string): string | null => {
+      try {
+        const decoded = decodeURIComponent(raw);
+        const m = decoded.match(guidRe);
+        return m?.[0] ?? null;
+      } catch {
+        const m = raw.match(guidRe);
+        return m?.[0] ?? null;
+      }
+    };
+    for (const part of String(document.cookie ?? "").split(";")) {
+      const value = part.split("=").slice(1).join("=").trim();
+      const found = pickGuid(value);
+      if (found) {
+        cartId = found;
+        break;
+      }
+    }
+    if (!guidRe.test(cartId)) {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        const found = pickGuid(localStorage.getItem(key) ?? "") || pickGuid(key);
+        if (found) {
+          cartId = found;
+          break;
+        }
+      }
+    }
+  } catch {
+    /* ignore storage access errors */
+  }
+
   const table = findCartTable();
   const cartItems: CartItemRow[] = [];
 
