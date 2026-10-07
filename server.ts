@@ -2,6 +2,7 @@ require("./lib/playwrightSetup");
 
 import type { Express, Request, Response } from "express";
 import type { DataTypes as DataTypesType } from "sequelize";
+import chalk from 'chalk';
 
 let apiReady = false;
 
@@ -55,10 +56,10 @@ async function initializeRoutes(app: Express): Promise<void> {
     .authenticate()
     .then(async () => {
       await ensureQuotePersistenceColumns();
-      console.log("Connected to PostgreSQL via Sequelize");
+      console.log(chalk.yellow("Connected to PostgreSQL via Sequelize"));
     })
     .catch((error: unknown) => {
-      console.error("Failed to connect to PostgreSQL:", error);
+      console.error(chalk.red("Failed to connect to PostgreSQL:"), error);
     });
 
   const persistenceAvailable = await refreshOfficePersistenceStatus();
@@ -131,18 +132,18 @@ async function bootstrap(): Promise<void> {
 
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(port, () => {
-      console.log(`Quote API running on http://localhost:${port}`);
+      console.log(chalk.green(`Quote API running on http://localhost:${port}`));
       resolve();
     });
     server.on("error", reject);
   });
 
   void initializeRoutes(app).catch((error: unknown) => {
-    console.error("Failed to initialize API routes:", error);
+    console.error(chalk.red("Failed to initialize API routes:"), error);
   });
 }
 
 void bootstrap().catch((error: unknown) => {
-  console.error("Failed to start Quote API:", error);
+  console.error(chalk.red("Failed to start Quote API:"), error);
   process.exit(1);
 });

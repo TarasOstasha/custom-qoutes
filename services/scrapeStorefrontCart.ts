@@ -18,14 +18,82 @@ import {
   extractAbandonedCartGuidFromText,
   isAbandonedCartGuid,
 } from "../lib/abandonedCart";
-import {
-  configuredStorefrontEmail,
-  ensureVolusionStorefrontLogin,
-} from "./volusionStorefrontLogin";
-import { resolveAbandonedCartGuidByEmail } from "./volusionCartIdLog";
 
 const DEFAULT_CART_URL = "https://www.xyzdisplays.com/ShoppingCart.php";
 const STORE_HOME_URL = "https://www.xyzdisplays.com/";
+
+function isAuthOrLoginUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return (
+    u.includes("login.volusion.com") ||
+    u.includes("/admin/") ||
+    u.includes("/login.php") ||
+    u.includes("/login.asp") ||
+    u.includes("myaccount.asp") ||
+    u.includes("myaccount.php")
+  );
+}
+
+/** Drop restored Login.php / admin tabs from the persistent Chromium profile. */
+async function closeRestoredPages(context: BrowserContext): Promise<void> {
+  for (const page of context.pages()) {
+    try {
+      if (!page.isClosed()) await page.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Clear leftover Volusion Auth / admin cookies so Open Session stays a guest storefront. */
+async function clearVolusionAuthCookies(context: BrowserContext): Promise<void> {
+  try {
+    const cookies = await context.cookies();
+    const authCookies = cookies.filter((cookie) => {
+      const domain = (cookie.domain || "").toLowerCase();
+      const name = cookie.name.toLowerCase();
+      const isLoginHost = domain.includes("login.volusion.com");
+      const isAuthName =
+        name.includes("auth") ||
+        name.includes("a0") ||
+        name.includes("oidc") ||
+        name.includes("admin") ||
+        name.includes("customer") ||
+        name.includes("session");
+      const isVolusionAuthHost = domain.includes("volusion.com") && isAuthName;
+      return isLoginHost || isVolusionAuthHost;
+    });
+    for (const cookie of authCookies) {
+      await context
+        .clearCookies({
+          name: cookie.name,
+          domain: cookie.domain,
+        })
+        .catch(() => undefined);
+    }
+    if (authCookies.length) {
+      console.log("[storefront] cleared Volusion auth/admin cookies:", authCookies.length);
+    }
+  } catch (error) {
+    console.error("[storefront] clear auth cookies failed:", error);
+  }
+}
+
+async function ensureGuestStorefrontPage(page: Page, targetUrl: string): Promise<void> {
+  await page.goto(targetUrl, { waitUntil: "load", timeout: 90_000 });
+  await delay(400);
+  if (isAuthOrLoginUrl(page.url())) {
+    await clearVolusionAuthCookies(page.context());
+    await page.goto(targetUrl, { waitUntil: "load", timeout: 90_000 });
+    await delay(400);
+  }
+  // Last resort: if Chromium still landed on Login.php, leave it for the homepage.
+  if (isAuthOrLoginUrl(page.url())) {
+    console.log("[storefront] forcing guest homepage away from", page.url());
+    await page.goto(STORE_HOME_URL, { waitUntil: "domcontentloaded", timeout: 90_000 });
+  }
+  await page.bringToFront().catch(() => undefined);
+}
 
 export type ScrapeStorefrontCartOptions = {
   cartUrl?: string;
@@ -71,13 +139,16 @@ async function launchVisiblePersistentContext(): Promise<BrowserContext> {
 
   liveContext = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
-    args: ["--window-size=1440,900"],
+    args: ["--window-size=1440,900", "--disable-session-crashed-bubble", "--noerrdialogs"],
     viewport: null,
     userAgent:
       process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   });
 
+  // Open Session only: strip leftover Login.php / auth from the persistent profile.
+  await clearVolusionAuthCookies(liveContext);
+  await closeRestoredPages(liveContext);
   return liveContext;
 }
 
@@ -108,7 +179,6 @@ async function getOrCreateLiveSession(options: ScrapeStorefrontCartOptions = {})
     livePage = existing ?? (await liveContext.newPage());
     await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
     await delay(500);
-    await ensureVolusionStorefrontLogin(livePage);
   }
 
   return livePage;
@@ -132,19 +202,13 @@ export async function getVolusionStorefrontLivePage(
 
 /**
  * Open a manual, visible Playwright session on storefront homepage.
- * Keeps the browser/context alive for user interaction.
+ * Keeps the browser/context alive for user interaction (guest cart is fine).
  */
-export async function openVisibleVolusionHomepageSession(): Promise<{
-  opened: true;
-  url: string;
-  storefrontLogin?: { loggedIn: boolean; email: string | null; error?: string };
-}> {
+export async function openVisibleVolusionHomepageSession(): Promise<{ opened: true; url: string }> {
   const context = await launchVisiblePersistentContext();
   livePage = await context.newPage();
-  await livePage.goto(STORE_HOME_URL, { waitUntil: "load", timeout: 90_000 });
-  const storefrontLogin = await ensureVolusionStorefrontLogin(livePage);
-  await livePage.goto(STORE_HOME_URL, { waitUntil: "load", timeout: 90_000 }).catch(() => undefined);
-  return { opened: true, url: livePage.url(), storefrontLogin };
+  await ensureGuestStorefrontPage(livePage, STORE_HOME_URL);
+  return { opened: true, url: livePage.url() };
 }
 
 /**
@@ -157,7 +221,6 @@ export async function openVisibleVolusionCartSession(
   const cartUrl = resolveCartUrl(options);
 
   const navigateCart = async (page: Page) => {
-    await ensureVolusionStorefrontLogin(page);
     await page.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
     await delay(500);
     return { opened: true as const, url: page.url() };
@@ -346,19 +409,43 @@ async function enrichCartItemOptionsFromModal(page: Page, payload: CartPayload):
 }
 
 /**
- * Prefer CartIDLog UUID from Playwright cookies / storage over line-level CartIDs.
+ * Prefer CartIDLog UUID from Playwright cookies (incl. HttpOnly) / storage.
+ * Guest carts still have a CartIDLog GUID — no storefront login required.
  */
 async function resolveAbandonedCartGuidFromLivePage(page: Page): Promise<string | null> {
+  type Candidate = { guid: string; score: number; source: string };
+  const candidates: Candidate[] = [];
+  const seen = new Set<string>();
+
+  const push = (guid: string | null | undefined, score: number, source: string) => {
+    const id = String(guid ?? "").trim();
+    if (!isAbandonedCartGuid(id)) return;
+    const key = id.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ guid: id, score, source });
+  };
+
   try {
-    const cookies = await page.context().cookies();
+    const cookies = await page.context().cookies("https://www.xyzdisplays.com");
     for (const cookie of cookies) {
+      const name = cookie.name.toLowerCase();
       const fromValue = extractAbandonedCartGuidFromText(cookie.value);
-      if (fromValue) return fromValue;
       const fromName = extractAbandonedCartGuidFromText(cookie.name);
-      if (fromName) return fromName;
+      const cartNameBonus =
+        /cart/.test(name) || name === "cartid" || name.includes("cartid") || name.includes("session")
+          ? 50
+          : 0;
+      // Exact cookie value == GUID is the usual Volusion CartIDLog session id.
+      if (isAbandonedCartGuid(cookie.value.trim())) {
+        push(cookie.value.trim(), 100 + cartNameBonus, `cookie-value:${cookie.name}`);
+      } else {
+        push(fromValue, 80 + cartNameBonus, `cookie-embedded:${cookie.name}`);
+      }
+      push(fromName, 40, `cookie-name:${cookie.name}`);
     }
-  } catch {
-    /* ignore */
+  } catch (error) {
+    console.error("[scrape-cart] cookie GUID read failed:", error);
   }
 
   try {
@@ -366,30 +453,47 @@ async function resolveAbandonedCartGuidFromLivePage(page: Page): Promise<string 
       const guidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
       const pick = (raw: string): string | null => {
         try {
-          const decoded = decodeURIComponent(raw);
-          return decoded.match(guidRe)?.[0] ?? null;
+          return decodeURIComponent(raw).match(guidRe)?.[0] ?? null;
         } catch {
           return raw.match(guidRe)?.[0] ?? null;
         }
       };
+      const found: Array<{ guid: string; source: string }> = [];
       for (const part of String(document.cookie ?? "").split(";")) {
+        const name = part.split("=")[0]?.trim() ?? "";
         const value = part.split("=").slice(1).join("=").trim();
-        const found = pick(value);
-        if (found) return found;
+        const g = pick(value);
+        if (g) found.push({ guid: g, source: `document.cookie:${name}` });
+      }
+      const hid = document.querySelector(
+        'input[name="CartID"], input[name="CartID5"], input[name="cartid"], #CartID',
+      ) as HTMLInputElement | null;
+      if (hid?.value && guidRe.test(hid.value.trim())) {
+        found.push({ guid: hid.value.trim(), source: "hidden-CartID" });
       }
       for (let i = 0; i < localStorage.length; i += 1) {
         const key = localStorage.key(i);
         if (!key) continue;
-        const found = pick(localStorage.getItem(key) ?? "") || pick(key);
-        if (found) return found;
+        const g = pick(localStorage.getItem(key) ?? "") || pick(key);
+        if (g) found.push({ guid: g, source: `localStorage:${key}` });
       }
-      return null;
+      return found;
     });
-    if (fromDom && isAbandonedCartGuid(fromDom)) return fromDom;
+    for (const row of fromDom) {
+      push(row.guid, row.source.startsWith("hidden") ? 90 : 60, row.source);
+    }
   } catch {
     /* ignore */
   }
 
+  candidates.sort((a, b) => b.score - a.score);
+  if (candidates.length) {
+    console.log(
+      "[scrape-cart] cart GUID candidates:",
+      candidates.map((c) => `${c.guid} (${c.source}, score=${c.score})`),
+    );
+    return candidates[0]?.guid ?? null;
+  }
   return null;
 }
 
@@ -437,17 +541,11 @@ export async function scrapeVolusionStorefrontCart(
     const fromSession = await resolveAbandonedCartGuidFromLivePage(page);
     if (fromSession) {
       raw.cartId = fromSession;
-    } else {
-      const email = configuredStorefrontEmail();
-      if (email) {
-        try {
-          const fromEmail = await resolveAbandonedCartGuidByEmail(email);
-          if (fromEmail) raw.cartId = fromEmail;
-        } catch (error) {
-          console.error("[scrape-cart] abandoned cart GUID email resolve failed:", error);
-        }
-      }
     }
+  } else {
+    // Prefer cookie/session GUID over line-level CartID if both exist.
+    const fromSession = await resolveAbandonedCartGuidFromLivePage(page);
+    if (fromSession) raw.cartId = fromSession;
   }
 
   if (debug) {

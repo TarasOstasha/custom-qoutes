@@ -355,7 +355,6 @@ export default function QuoteBuilderPage() {
   const [searchResults, setSearchResults] = useState<QuoteSearchResult[]>([]);
   const [loadQuoteLoadingId, setLoadQuoteLoadingId] = useState<string | null>(null);
   const [liveSessionUrl, setLiveSessionUrl] = useState<string | null>(null);
-  const [storefrontLoginMessage, setStorefrontLoginMessage] = useState<string | null>(null);
   const [lastCartPayload, setLastCartPayload] = useState<CartPayload | null>(null);
   const [lineItemOptions, setLineItemOptions] = useState<Record<string, LineItemOptionState>>({});
 
@@ -1150,7 +1149,6 @@ export default function QuoteBuilderPage() {
   /** Playwright on the API uses a persistent Chromium profile (`VOLUSION_PLAYWRIGHT_USER_DATA_DIR`); no cookies in the request. */
   const openLiveCartSession = async () => {
     setOpenCartSessionLoading(true);
-    setStorefrontLoginMessage(null);
     try {
       const response = await fetch(`${getApiBase()}/api/cart/open-session`, {
         method: "POST",
@@ -1161,21 +1159,12 @@ export default function QuoteBuilderPage() {
         opened?: boolean;
         url?: string;
         error?: string;
-        storefrontLogin?: { loggedIn?: boolean; email?: string | null; error?: string; skipped?: boolean };
       };
       if (!response.ok) {
         alert(data?.error ?? "Failed to open cart session");
         return;
       }
       setLiveSessionUrl(data.url ?? null);
-      const login = data.storefrontLogin;
-      if (login?.loggedIn) {
-        setStorefrontLoginMessage(`Storefront logged in as ${login.email ?? "customer"}`);
-      } else if (login?.skipped) {
-        setStorefrontLoginMessage(null);
-      } else if (login?.error) {
-        setStorefrontLoginMessage(`Storefront login: ${login.error}`);
-      }
     } finally {
       setOpenCartSessionLoading(false);
     }
@@ -2708,11 +2697,6 @@ export default function QuoteBuilderPage() {
             {liveSessionUrl ? (
               <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                 Live session page: {liveSessionUrl}
-              </div>
-            ) : null}
-            {storefrontLoginMessage ? (
-              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                {storefrontLoginMessage}
               </div>
             ) : null}
           </div>
