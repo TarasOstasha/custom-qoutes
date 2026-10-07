@@ -13,7 +13,11 @@ import {
   searchAbandonedCartsByEmail,
 } from "../services/volusionCartIdLog";
 import { rebuildStorefrontCartFromAbandonedCartId } from "../services/rebuildStorefrontCart";
-import { looksLikeCartId, looksLikeEmail } from "../lib/abandonedCart";
+import {
+  looksLikeCartId,
+  looksLikeEmail,
+  normalizeAbandonedCartLines,
+} from "../lib/abandonedCart";
 import { allocateNextQuoteNumber } from "../lib/allocateNextQuoteNumber";
 import { Quote, QuoteItem, getActiveSequelize } from "../lib/models";
 import { normalizeSalesContact } from "../lib/mockQuote";
@@ -438,11 +442,13 @@ router.post("/abandoned-carts/contents", async (req: Request, res: Response) => 
 
 router.post("/abandoned-carts/rebuild", async (req: Request, res: Response) => {
   try {
-    const cartId = String((req.body as { cartId?: string } | undefined)?.cartId ?? "").trim();
+    const body = (req.body ?? {}) as { cartId?: string; lines?: unknown };
+    const cartId = String(body.cartId ?? "").trim();
     if (!looksLikeCartId(cartId)) {
       return res.status(400).json({ error: "A valid cart GUID is required" });
     }
-    const result = await rebuildStorefrontCartFromAbandonedCartId(cartId);
+    const lines = normalizeAbandonedCartLines(body.lines);
+    const result = await rebuildStorefrontCartFromAbandonedCartId(cartId, { lines });
     const status = result.success || result.added.length > 0 ? 200 : 502;
     return res.status(status).json(result);
   } catch (error) {
@@ -548,6 +554,10 @@ const createQuote = async (req: Request, res: Response) => {
         ),
         salesContact: normalizeSalesContact(pickBodyValue(body, "sales_contact", "salesContact")),
         abandonedCartId: toStringOrNull(pickBodyValue(body, "abandoned_cart_id", "abandonedCartId")),
+        abandonedCartLinesJson:
+          pickBodyValue(body, "abandoned_cart_lines_json", "abandonedCartLinesJson") ??
+          pickBodyValue(body, "abandoned_cart_lines", "abandonedCartLines") ??
+          null,
         internalAttachmentsJson: parseInternalAttachmentsInput(body),
         subtotal: toDecimalStringOrNull(body.subtotal),
         shipping: toDecimalStringOrNull(body.shipping),
@@ -669,6 +679,15 @@ router.put("/:id", async (req: Request, res: Response) => {
       updates.abandonedCartId = toStringOrNull(
         pickBodyValue(body, "abandoned_cart_id", "abandonedCartId"),
       );
+    }
+    if (
+      pickBodyValue(body, "abandoned_cart_lines_json", "abandonedCartLinesJson") !== undefined ||
+      pickBodyValue(body, "abandoned_cart_lines", "abandonedCartLines") !== undefined
+    ) {
+      updates.abandonedCartLinesJson =
+        pickBodyValue(body, "abandoned_cart_lines_json", "abandonedCartLinesJson") ??
+        pickBodyValue(body, "abandoned_cart_lines", "abandonedCartLines") ??
+        null;
     }
     if (
       pickBodyValue(body, "internal_attachments_json", "internalAttachmentsJson") !== undefined ||

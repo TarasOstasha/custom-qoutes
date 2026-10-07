@@ -7,6 +7,35 @@ export type AbandonedCartLine = {
   price?: number;
 };
 
+/** Normalize API/UI payloads into rebuild-ready cart lines. */
+export function normalizeAbandonedCartLines(raw: unknown): AbandonedCartLine[] {
+  if (!Array.isArray(raw)) return [];
+  const lines: AbandonedCartLine[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    const productCode = String(record.productCode ?? record.product_code ?? "").trim();
+    if (!productCode) continue;
+    const optionIds = Array.isArray(record.optionIds)
+      ? record.optionIds
+          .map((value) => Number(value))
+          .filter((n) => Number.isFinite(n) && n > 0)
+          .map((n) => Math.trunc(n))
+      : parseOptionIdsCsv(String(record.optionIds ?? record.option_ids ?? ""));
+    const qtyRaw = Number(record.qty ?? record.quantity ?? 1);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.max(1, Math.trunc(qtyRaw)) : 1;
+    const priceRaw = Number(record.price);
+    const price = Number.isFinite(priceRaw) && priceRaw >= 0 ? priceRaw : undefined;
+    lines.push({
+      productCode,
+      optionIds,
+      qty,
+      ...(price !== undefined ? { price } : {}),
+    });
+  }
+  return lines;
+}
+
 export type AbandonedCartSummary = {
   cartId: string;
   email: string | null;
@@ -41,7 +70,10 @@ export function looksLikeEmail(value: string): boolean {
   return v.includes("@") && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
-/** Parse comma-separated OptionIDs, e.g. "6651,6349,6323,6341". */
+/**
+ * Parse comma-separated OptionIDs.
+ * Accepts "6651,6349" and Volusion slash form "/232,/278,/273".
+ */
 export function parseOptionIdsCsv(raw: string | null | undefined): number[] {
   const source = String(raw ?? "").trim();
   if (!source) return [];
@@ -50,7 +82,10 @@ export function parseOptionIdsCsv(raw: string | null | undefined): number[] {
   for (const part of source.split(/[,;\s]+/)) {
     const cleaned = part.trim();
     if (!cleaned) continue;
-    const n = Number(cleaned);
+    // Volusion often prefixes option ids with "/" in CartIDLog ("/232,/278").
+    const digits = cleaned.replace(/^\/+/, "").match(/^\d+$/)?.[0];
+    if (!digits) continue;
+    const n = Number(digits);
     if (!Number.isFinite(n) || n <= 0) continue;
     const id = Math.trunc(n);
     if (seen.has(id)) continue;
@@ -114,6 +149,17 @@ export function mapCartContentsRow(
   };
 }
 
+function isCartContentsHeaderRow(row: string[]): boolean {
+  const normalized = row.map((cell) => cellText(cell).toLowerCase().replace(/[\s_]+/g, ""));
+  return (
+    normalized.includes("productcode") &&
+    (normalized.includes("optionids") ||
+      normalized.includes("optionid") ||
+      normalized.includes("qty") ||
+      normalized.includes("quantity"))
+  );
+}
+
 /**
  * Parse HTML (or plain table text markup) of the admin cart detail
  * "Shopping Cart Contents" table into lines.
@@ -122,14 +168,20 @@ export function parseAbandonedCartContentsHtml(html: string): AbandonedCartLine[
   const source = String(html ?? "");
   if (!source.trim()) return [];
 
-  // Prefer content after the Shopping Cart Contents heading through the following table.
+  // Prefer the dedicated #ShoppingCartContents table (Volusion AdminDetails_Generic).
+  const byIdMatch = source.match(
+    /<table\b[^>]*\bid\s*=\s*["']ShoppingCartContents["'][^>]*>([\s\S]*?)<\/table>/i,
+  );
   const sectionMatch = source.match(
     /Shopping\s+Cart\s+Contents[\s\S]*?<table\b[^>]*>([\s\S]*?)<\/table>/i,
   );
-  const tableHtml = sectionMatch?.[1] ?? (() => {
-    const anyTable = source.match(/<table\b[^>]*>([\s\S]*?ProductCode[\s\S]*?)<\/table>/i);
-    return anyTable?.[1] ?? "";
-  })();
+  const tableHtml =
+    byIdMatch?.[1] ??
+    sectionMatch?.[1] ??
+    (() => {
+      const anyTable = source.match(/<table\b[^>]*>([\s\S]*?ProductCode[\s\S]*?)<\/table>/i);
+      return anyTable?.[1] ?? "";
+    })();
 
   if (!tableHtml.trim()) return [];
 
@@ -153,13 +205,11 @@ export function parseAbandonedCartContentsHtml(html: string): AbandonedCartLine[
 
   if (rows.length < 2) return [];
 
-  const headerIdx = rows.findIndex((row) =>
-    row.some((cell) => /^productcode$/i.test(cellText(cell)) || /productcode/i.test(cellText(cell))),
-  );
-  const start = headerIdx >= 0 ? headerIdx : 0;
-  const headers = rows[start] ?? [];
+  const headerIdx = rows.findIndex((row) => isCartContentsHeaderRow(row));
+  if (headerIdx < 0) return [];
+  const headers = rows[headerIdx] ?? [];
   const lines: AbandonedCartLine[] = [];
-  for (let i = start + 1; i < rows.length; i += 1) {
+  for (let i = headerIdx + 1; i < rows.length; i += 1) {
     const line = mapCartContentsRow(headers, rows[i] ?? []);
     if (line) lines.push(line);
   }

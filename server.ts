@@ -50,6 +50,7 @@ async function initializeRoutes(app: Express): Promise<void> {
     });
     await addIfMissing("sales_contact", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("abandoned_cart_id", { type: DataTypes.STRING, allowNull: true });
+    await addIfMissing("abandoned_cart_lines_json", { type: DataTypes.JSONB, allowNull: true });
   }
 
   sequelize

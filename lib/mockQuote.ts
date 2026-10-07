@@ -74,6 +74,16 @@ export type Quote = {
   salesContact?: string | null;
   /** Volusion Abandoned/Live Cart GUID linked to this quote. */
   abandonedCartId?: string | null;
+  /**
+   * Snapshot of CartIDLog lines (ProductCode / OptionIDs / QTY) so rebuild can
+   * still work after Volusion ClearCart deletes that GUID from admin.
+   */
+  abandonedCartLines?: Array<{
+    productCode: string;
+    optionIds: number[];
+    qty: number;
+    price?: number;
+  }> | null;
 };
 
 export const SALES_CONTACTS = ["Manny", "Yelena", "Nikita", "Alex", "Yulia"] as const;
@@ -113,6 +123,7 @@ export const mockQuote: Quote = {
   notes: "Estimate valid for 30 days",
   internalAttachments: [],
   abandonedCartId: null,
+  abandonedCartLines: null,
   subtotal: 2992.5,
   discountTotal: 607.5,
   shippingTotal: 346.32,
@@ -214,6 +225,7 @@ export function createEmptyQuote(): Quote {
     estimateValidDays: DEFAULT_ESTIMATE_VALID_DAYS,
     salesContact: null,
     abandonedCartId: null,
+    abandonedCartLines: null,
     subtotal: 0,
     discountTotal: 0,
     shippingTotal: 0,

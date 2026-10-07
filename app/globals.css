@@ -56,10 +56,27 @@ a {
   cursor: pointer;
 }
 
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+  pointer-events: none;
+}
+
 .btn.primary {
   border-color: #1d4ed8;
   background: #1d4ed8;
   color: #fff;
+}
+
+.btn.primary:disabled,
+.btn.primary[aria-disabled="true"] {
+  background: #93c5fd;
+  border-color: #93c5fd;
+  color: #eff6ff;
 }
 
 .section {

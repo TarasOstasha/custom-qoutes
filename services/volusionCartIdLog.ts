@@ -15,7 +15,7 @@ import {
 
 const CART_ID_LOG_URL =
   process.env.VOLUSION_CART_ID_LOG_URL?.trim() ||
-  "https://www.xyzdisplays.com/admin/TableViewer.php?table=CartIDLog";
+  "https://www.xyzdisplays.com/admin/TableViewer.asp?table=CartIDLog";
 
 let adminBrowser: Browser | null = null;
 let adminContext: BrowserContext | null = null;
@@ -25,9 +25,20 @@ function preferPhpAdminUrl(url: string): string {
   return url.replace(/\.asp(?=($|\?|#))/gi, ".php");
 }
 
+function urlVariants(url: string): string[] {
+  const out: string[] = [];
+  const push = (value: string) => {
+    if (!out.includes(value)) out.push(value);
+  };
+  push(url);
+  if (/\.asp(?=($|\?|#))/i.test(url)) push(preferPhpAdminUrl(url));
+  if (/\.php(?=($|\?|#))/i.test(url)) push(url.replace(/\.php(?=($|\?|#))/gi, ".asp"));
+  return out;
+}
+
 async function isLoginPage(page: Page): Promise<boolean> {
   const url = page.url().toLowerCase();
-  if (url.includes("login")) return true;
+  if (url.includes("login.volusion.com") || url.includes("/login")) return true;
   return page
     .locator('input[type="password"]')
     .first()
@@ -53,45 +64,78 @@ async function loginIfNeeded(page: Page): Promise<void> {
     throw new Error("Missing VOLUSION_LOGIN_EMAIL or VOLUSION_LOGIN_PASSWORD.");
   }
 
-  if (!(await isLoginPage(page))) return;
+  // Volusion Admin Auth0: username + password on one form, submit button[name=action].
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (!(await isLoginPage(page))) return;
 
-  await fillFirstVisible(
-    page,
-    [
-      'input[name="email"]',
-      'input[name="Email"]',
-      'input[name="Login"]',
-      'input[name="username"]',
-      'input[type="email"]',
-    ],
-    loginEmail,
-  );
-  await fillFirstVisible(
-    page,
-    ['input[name="password"]', 'input[name="Password"]', 'input[type="password"]'],
-    password,
-  );
+    const filledUser = await fillFirstVisible(
+      page,
+      [
+        "input#username",
+        'input[name="username"]',
+        'input[name="email"]',
+        'input[name="Email"]',
+        'input[name="Login"]',
+        'input[type="email"]',
+      ],
+      loginEmail,
+    );
+    const filledPass = await fillFirstVisible(
+      page,
+      ["input#password", 'input[name="password"]', 'input[name="Password"]', 'input[type="password"]'],
+      password,
+    );
 
-  const submitSelectors = [
-    'button[type="submit"]',
-    'input[type="submit"]',
-    'button:has-text("Sign In")',
-    'button:has-text("Login")',
-  ];
-  let submitted = false;
-  for (const selector of submitSelectors) {
-    const btn = page.locator(selector).first();
-    if (await btn.isVisible().catch(() => false)) {
-      await btn.click();
-      submitted = true;
-      break;
+    const submitSelectors = [
+      'button[name="action"]',
+      'button[type="submit"]',
+      'input[type="submit"]',
+      'button:has-text("Log in")',
+      'button:has-text("Continue")',
+      'button:has-text("Sign In")',
+      'button:has-text("Login")',
+    ];
+    let submitted = false;
+    for (const selector of submitSelectors) {
+      const btn = page.locator(selector).first();
+      if (await btn.isVisible().catch(() => false)) {
+        await btn.click();
+        submitted = true;
+        break;
+      }
+    }
+    if (!submitted) {
+      await page.keyboard.press("Enter");
+    }
+    await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+    await delay(filledUser || filledPass ? 1500 : 700);
+
+    // Wait for Auth0 redirect back to store admin when possible.
+    await page
+      .waitForURL((url) => !url.toString().toLowerCase().includes("login.volusion.com"), {
+        timeout: 20_000,
+      })
+      .catch(() => undefined);
+  }
+
+  if (await isLoginPage(page)) {
+    throw new Error("Volusion admin login failed (still on login page).");
+  }
+}
+
+async function ensureOnCartIdLog(page: Page): Promise<void> {
+  for (const url of urlVariants(CART_ID_LOG_URL)) {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    await loginIfNeeded(page);
+    if (await isLoginPage(page)) continue;
+    // Re-goto after login in case Auth0 left us on a generic admin home.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    await loginIfNeeded(page);
+    const html = await page.content();
+    if (/CartIDLog|Abandoned\s*\/\s*Live\s*Carts?|TableViewer/i.test(html) || /CartID/i.test(html)) {
+      return;
     }
   }
-  if (!submitted) {
-    await page.keyboard.press("Enter");
-  }
-  await page.waitForLoadState("domcontentloaded");
-  await delay(400);
 }
 
 async function getAdminPage(): Promise<Page> {
@@ -114,15 +158,7 @@ async function getAdminPage(): Promise<Page> {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   });
   adminPage = await adminContext.newPage();
-  await adminPage.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
-  await loginIfNeeded(adminPage);
-  await adminPage.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
+  await ensureOnCartIdLog(adminPage);
   return adminPage;
 }
 
@@ -164,8 +200,7 @@ async function scrapeCartIdLogRowsFromPage(page: Page): Promise<AbandonedCartSum
   return carts;
 }
 
-async function tryAdminSearch(page: Page, email: string): Promise<void> {
-  // Prefer Volusion TableViewer search if present.
+async function tryAdminSearch(page: Page, query: string): Promise<void> {
   const searchLink = page.locator('a:has-text("Search")').first();
   if (await searchLink.isVisible().catch(() => false)) {
     await searchLink.click().catch(() => undefined);
@@ -177,6 +212,8 @@ async function tryAdminSearch(page: Page, email: string): Promise<void> {
     'input[name="search"]',
     'input[name="Keyword"]',
     'input[name="keyword"]',
+    'input[name="searchfor"]',
+    'input[name="SearchFor"]',
     'input[type="search"]',
     'input[name="Email"]',
     'input[name="email"]',
@@ -185,7 +222,7 @@ async function tryAdminSearch(page: Page, email: string): Promise<void> {
   for (const selector of searchInputs) {
     const el = page.locator(selector).first();
     if (await el.isVisible().catch(() => false)) {
-      await el.fill(email);
+      await el.fill(query);
       filled = true;
       break;
     }
@@ -211,22 +248,14 @@ export async function searchAbandonedCartsByEmail(
   if (!needle) throw new Error("Email is required");
 
   const page = await getAdminPage();
-  await page.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
-  await loginIfNeeded(page);
-
+  await ensureOnCartIdLog(page);
   await tryAdminSearch(page, needle);
 
   let carts = filterCartSummariesByEmail(await scrapeCartIdLogRowsFromPage(page), needle);
 
   // If search UI didn't narrow results, fall back to scanning a few list pages.
   if (!carts.length) {
-    await page.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-      waitUntil: "domcontentloaded",
-      timeout: 90_000,
-    });
+    await ensureOnCartIdLog(page);
     const collected: AbandonedCartSummary[] = [];
     for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
       collected.push(...(await scrapeCartIdLogRowsFromPage(page)));
@@ -249,37 +278,64 @@ function pageLooksLikeAbandonedCartDetail(html: string): boolean {
   );
 }
 
+async function pageHasCartContents(page: Page): Promise<boolean> {
+  const url = page.url().toLowerCase();
+  if (url.includes("norecord=y") || /[?&]id=(?:&|$)/i.test(url)) {
+    return false;
+  }
+  const html = await page.content();
+  if (/NoRecord=Y|No\s+Record/i.test(html) && !/ProductCode/i.test(html)) {
+    return false;
+  }
+  if (pageLooksLikeAbandonedCartDetail(html)) {
+    return linesFromContentRows(await extractContentsRowsFromDom(page)).length > 0
+      || /#ShoppingCartContents[\s\S]*?ProductCode/i.test(html)
+      || /id=["']ShoppingCartContents["'][\s\S]*?ProductCode/i.test(html);
+  }
+  if (/Shopping\s+Cart\s+Contents/i.test(html) && /ProductCode/i.test(html)) {
+    return true;
+  }
+  return linesFromContentRows(await extractContentsRowsFromDom(page)).length > 0;
+}
+
 async function extractContentsRowsFromDom(page: Page): Promise<string[][]> {
   return page.evaluate(() => {
     const normalize = (value: string) =>
       value.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 
+    const isHeader = (row: string[]) => {
+      const keys = row.map((c) => c.toLowerCase().replace(/[\s_]+/g, ""));
+      return keys.includes("productcode") && (keys.includes("optionids") || keys.includes("qty"));
+    };
+
+    // Prefer the dedicated Volusion contents table (avoids nested/flattened admin chrome rows).
+    const scoped =
+      document.querySelectorAll("#ShoppingCartContents tr").length > 0
+        ? Array.from(document.querySelectorAll("#ShoppingCartContents tr"))
+        : Array.from(document.querySelectorAll("tr"));
+
     const allRows: string[][] = [];
-    for (const tr of Array.from(document.querySelectorAll("tr"))) {
+    for (const tr of scoped) {
       const cells = Array.from(tr.querySelectorAll("td,th")).map((td) =>
         normalize(td.textContent ?? ""),
       );
       if (cells.some((c) => c)) allRows.push(cells);
     }
 
-    // Prefer the table whose header includes ProductCode (Shopping Cart Contents).
-    const headerIdx = allRows.findIndex((row) =>
-      row.some((cell) => /^productcode$/i.test(cell) || /product\s*code/i.test(cell)),
-    );
+    const headerIdx = allRows.findIndex((row) => isHeader(row));
     if (headerIdx < 0) return allRows;
 
     const headers = allRows[headerIdx] ?? [];
     const out: string[][] = [headers];
     for (let i = headerIdx + 1; i < allRows.length; i += 1) {
       const row = allRows[i] ?? [];
-      // Stop when we hit another section header row with fewer product-like cells.
-      if (row.some((cell) => /^cart\s*info$/i.test(cell) || /^id$/i.test(cell) && row.length <= 2)) {
+      if (row.some((cell) => /^cart\s*info$/i.test(cell) || (/^id$/i.test(cell) && row.length <= 2))) {
         break;
       }
-      // Keep rows that look like product lines (first cell looks like a code).
       const first = (row[0] ?? "").trim();
       if (!first) continue;
       if (/^productcode$/i.test(first)) continue;
+      if (/^shopping\s+cart\s+contents/i.test(first)) continue;
       out.push(row);
     }
     return out;
@@ -302,8 +358,9 @@ async function findCartDetailHrefOnPage(page: Page, cartId: string): Promise<str
   return page.evaluate((needle) => {
     for (const a of Array.from(document.querySelectorAll("a"))) {
       const text = (a.textContent ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-      const href = (a.getAttribute("href") ?? "").toLowerCase();
-      if (text === needle || href.includes(needle)) {
+      const hrefAttr = (a.getAttribute("href") ?? "").toLowerCase();
+      const href = ((a as HTMLAnchorElement).href || "").toLowerCase();
+      if (text === needle || hrefAttr.includes(needle) || href.includes(needle)) {
         try {
           return new URL((a as HTMLAnchorElement).href, window.location.href).href;
         } catch {
@@ -315,55 +372,72 @@ async function findCartDetailHrefOnPage(page: Page, cartId: string): Promise<str
   }, id);
 }
 
+async function clickCartDetailOnPage(page: Page, cartId: string): Promise<boolean> {
+  const id = cartId.trim();
+  const candidates = [
+    page.locator(`a[href*="${id}" i]`).first(),
+    page.getByRole("link", { name: id, exact: true }).first(),
+    page.locator(`a:has-text("${id}")`).first(),
+    page.locator(`td:has-text("${id}") a`).first(),
+    page.locator(`tr:has-text("${id}") a`).first(),
+  ];
+
+  for (const link of candidates) {
+    if (!(await link.isVisible().catch(() => false))) continue;
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      link.click({ timeout: 8_000 }),
+    ]).catch(() => undefined);
+    await delay(800);
+    await loginIfNeeded(page);
+    if (await pageHasCartContents(page)) return true;
+  }
+  return false;
+}
+
 async function openCartDetailById(page: Page, cartId: string): Promise<void> {
   const id = cartId.trim();
 
   const tryNavigate = async (url: string): Promise<boolean> => {
-    await page.goto(preferPhpAdminUrl(url), {
-      waitUntil: "domcontentloaded",
-      timeout: 60_000,
-    });
-    await loginIfNeeded(page);
-    await delay(500);
-    const html = await page.content();
-    if (pageLooksLikeAbandonedCartDetail(html) || /Shopping\s+Cart\s+Contents/i.test(html)) {
-      return true;
+    for (const variant of urlVariants(url)) {
+      console.log("[abandoned-cart] try detail url", variant);
+      await page.goto(variant, { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await loginIfNeeded(page);
+      await delay(500);
+      if (await pageHasCartContents(page)) {
+        console.log("[abandoned-cart] detail opened via", variant, "→", page.url());
+        return true;
+      }
     }
-    // Some themes show contents without the exact heading.
-    const rows = await extractContentsRowsFromDom(page);
-    if (linesFromContentRows(rows).length > 0) return true;
     return false;
   };
 
-  // 1) Find and open the GUID link from CartIDLog (search + a few list pages).
-  await page.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
-  await loginIfNeeded(page);
+  // Direct detail URL used by this store's Abandoned / Live Cart page.
+  const directCandidates = [
+    `https://www.xyzdisplays.com/admin/AdminDetails_Generic.php?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
+    `https://www.xyzdisplays.com/admin/AdminDetails_Generic.asp?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
+    `https://www.xyzdisplays.com/admin/AdminDetails_Generic.php?Table=CartIDLog&id=${encodeURIComponent(id)}`,
+    `https://www.xyzdisplays.com/admin/AdminDetails.asp?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
+    `https://www.xyzdisplays.com/admin/AdminDetails.php?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
+  ];
+  for (const url of directCandidates) {
+    if (await tryNavigate(url)) return;
+  }
+
+  // Fallback: CartIDLog list → search → click GUID link.
+  await ensureOnCartIdLog(page);
   await tryAdminSearch(page, id);
 
-  for (let pageIndex = 0; pageIndex < 6; pageIndex += 1) {
+  for (let pageIndex = 0; pageIndex < 8; pageIndex += 1) {
+    if (await clickCartDetailOnPage(page, id)) return;
+
     const href = await findCartDetailHrefOnPage(page, id);
     if (href) {
       if (await tryNavigate(href)) return;
-
-      // Click fallback (some Volusion links are JS).
-      const link = page.locator(`a[href*="${id}"], a:has-text("${id}")`).first();
-      if (await link.isVisible().catch(() => false)) {
-        await Promise.all([
-          page.waitForLoadState("domcontentloaded"),
-          link.click(),
-        ]).catch(() => undefined);
-        await delay(700);
-        const html = await page.content();
-        if (pageLooksLikeAbandonedCartDetail(html) || /Shopping\s+Cart\s+Contents/i.test(html)) {
-          return;
-        }
-        if (linesFromContentRows(await extractContentsRowsFromDom(page)).length > 0) return;
-      }
-      break;
+      if (await clickCartDetailOnPage(page, id)) return;
     }
+
+    if (await pageHasCartContents(page)) return;
 
     const next = page.locator('a:has-text("Next"), a[title*="Next" i]').first();
     if (!(await next.isVisible().catch(() => false))) break;
@@ -372,22 +446,9 @@ async function openCartDetailById(page: Page, cartId: string): Promise<void> {
     await delay(300);
   }
 
-  // 2) Direct admin detail/editor URLs used by Volusion themes.
-  const candidates = [
-    `https://www.xyzdisplays.com/admin/TableEditor.php?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/TableEditor.php?table=CartIDLog&ID=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/TableEditor.php?Table=CartIDLog&id=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/AdminDetails.php?Table=CartIDLog&ID=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/ShoppingCart.php?CartID=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/ShoppingCart_View.php?CartID=${encodeURIComponent(id)}`,
-    `https://www.xyzdisplays.com/admin/TableViewer.php?table=CartIDLog&ID=${encodeURIComponent(id)}`,
-  ];
-
-  for (const url of candidates) {
-    if (await tryNavigate(url)) return;
-  }
-
-  throw new Error(`Could not open Abandoned/Live Cart detail for cart ${id}`);
+  throw new Error(
+    `Could not open Abandoned/Live Cart detail for cart ${id} (last url: ${page.url()})`,
+  );
 }
 
 export async function fetchAbandonedCartContents(
@@ -401,7 +462,6 @@ export async function fetchAbandonedCartContents(
   const page = await getAdminPage();
   await openCartDetailById(page, id);
 
-  // Wait briefly for contents table if the page is still settling.
   await page
     .getByText(/Shopping\s+Cart\s+Contents/i)
     .first()
@@ -420,6 +480,7 @@ export async function fetchAbandonedCartContents(
     url: page.url(),
     itemCount: items.length,
     products: items.map((item) => item.productCode),
+    optionIds: items.map((item) => item.optionIds),
   });
 
   return { cartId: id, items };
@@ -434,7 +495,6 @@ export async function resolveAbandonedCartGuidByEmail(
 ): Promise<string | null> {
   const carts = await searchAbandonedCartsByEmail(email);
   if (!carts.length) return null;
-  // CartIDLog list is typically newest-first; keep first with a GUID.
   const hit = carts.find((cart) => isAbandonedCartGuid(cart.cartId));
   if (hit) {
     console.log("[abandoned-cart] resolved GUID by email", {
@@ -453,22 +513,14 @@ export async function findEmailForCartId(cartId: string): Promise<string | null>
   const id = cartId.trim();
   if (!id) return null;
   const page = await getAdminPage();
-  await page.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
-  await loginIfNeeded(page);
+  await ensureOnCartIdLog(page);
   await tryAdminSearch(page, id);
 
   const carts = await scrapeCartIdLogRowsFromPage(page);
   const match = carts.find((c) => c.cartId.toLowerCase() === id.toLowerCase());
   if (match?.email) return match.email;
 
-  // Broader scan
-  await page.goto(preferPhpAdminUrl(CART_ID_LOG_URL), {
-    waitUntil: "domcontentloaded",
-    timeout: 90_000,
-  });
+  await ensureOnCartIdLog(page);
   for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
     const pageCarts = await scrapeCartIdLogRowsFromPage(page);
     const hit = pageCarts.find((c) => c.cartId.toLowerCase() === id.toLowerCase());

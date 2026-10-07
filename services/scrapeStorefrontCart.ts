@@ -1,8 +1,8 @@
 require("../lib/playwrightSetup");
 
 import { setTimeout as delay } from "node:timers/promises";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { chromium, type BrowserContext, type Page } from "playwright";
 import {
   extractCartPayloadInBrowser,
@@ -34,15 +34,41 @@ function isAuthOrLoginUrl(url: string): boolean {
   );
 }
 
-/** Drop restored Login.php / admin tabs from the persistent Chromium profile. */
-async function closeRestoredPages(context: BrowserContext): Promise<void> {
-  for (const page of context.pages()) {
+/**
+ * Close restored Login/admin tabs only. Keep at least one page — closing every
+ * tab then calling newPage() can fail with Target.createTarget on Chromium.
+ */
+async function closeRestoredLoginPages(context: BrowserContext): Promise<void> {
+  const pages = context.pages().filter((page) => !page.isClosed());
+  if (!pages.length) return;
+
+  const loginPages: Page[] = [];
+  const keepPages: Page[] = [];
+  for (const page of pages) {
+    const url = page.url();
+    if (isAuthOrLoginUrl(url) || url === "about:blank") {
+      loginPages.push(page);
+    } else {
+      keepPages.push(page);
+    }
+  }
+
+  // Prefer keeping a real storefront tab; otherwise keep one blank/login tab to reuse.
+  const closable =
+    keepPages.length > 0 ? loginPages : loginPages.slice(0, Math.max(0, loginPages.length - 1));
+  for (const page of closable) {
     try {
       if (!page.isClosed()) await page.close();
     } catch {
       /* ignore */
     }
   }
+}
+
+async function getOrCreateContextPage(context: BrowserContext): Promise<Page> {
+  const existing = context.pages().find((page) => !page.isClosed());
+  if (existing) return existing;
+  return context.newPage();
 }
 
 /** Clear leftover Volusion Auth / admin cookies so Open Session stays a guest storefront. */
@@ -101,14 +127,8 @@ export type ScrapeStorefrontCartOptions = {
 
 let liveContext: BrowserContext | null = null;
 let livePage: Page | null = null;
-
-function envHeadless(defaultValue = true): boolean {
-  const raw = process.env.VOLUSION_PLAYWRIGHT_HEADLESS?.trim().toLowerCase();
-  if (!raw) return defaultValue;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  return defaultValue;
-}
+/** Window parked off-screen during Load-into-cart (same headed context; no relaunch). */
+let liveOffscreen = false;
 
 function preferPhpStorefrontUrl(url: string): string {
   return url.replace(/\.asp(?=($|\?|#))/gi, ".php");
@@ -122,82 +142,287 @@ function resolveCartUrl(options: ScrapeStorefrontCartOptions = {}): string {
   return preferPhpStorefrontUrl(raw);
 }
 
-async function launchVisiblePersistentContext(): Promise<BrowserContext> {
-  const profileDir = process.env.VOLUSION_PLAYWRIGHT_USER_DATA_DIR?.trim() || ".playwright-volusion-profile";
-  const userDataDir = resolve(profileDir);
-  await mkdir(userDataDir, { recursive: true });
+export type LaunchStorefrontOptions = {
+  /** Park window off-screen so rebuild steps are not visible. */
+  offscreen?: boolean;
+};
 
+function storefrontProfileDir(): string {
+  const profileDir = process.env.VOLUSION_PLAYWRIGHT_USER_DATA_DIR?.trim() || ".playwright-volusion-profile";
+  return resolve(profileDir);
+}
+
+/** Chromium leaves these behind on Windows and blocks the next launchPersistentContext. */
+async function clearChromiumProfileLocks(userDataDir: string): Promise<void> {
+  for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]) {
+    await unlink(join(userDataDir, name)).catch(() => undefined);
+  }
+}
+
+async function closeLiveContext(): Promise<void> {
   if (liveContext) {
     try {
       await liveContext.close();
     } catch {
       /* context may already be closed */
     }
-    liveContext = null;
-    livePage = null;
   }
+  liveContext = null;
+  livePage = null;
+  liveOffscreen = false;
+  await clearChromiumProfileLocks(storefrontProfileDir());
+}
+
+/** Outer Chromium window size. Profile Preferences.window_placement overrides --window-size. */
+const STOREFRONT_WINDOW_WIDTH = 1440;
+const STOREFRONT_WINDOW_HEIGHT = 1300;
+const STOREFRONT_WINDOW_LEFT = 40;
+const STOREFRONT_WINDOW_TOP = 40;
+
+/**
+ * Chromium persistent profile restores last window_placement (was ~900px tall).
+ * Rewrite it before launch so Open Session opens tall every time.
+ */
+async function resetChromiumWindowPlacement(userDataDir: string): Promise<void> {
+  const prefsPath = join(userDataDir, "Default", "Preferences");
+  try {
+    const raw = await readFile(prefsPath, "utf8");
+    const prefs = JSON.parse(raw) as {
+      browser?: {
+        window_placement?: Record<string, unknown>;
+        window_placement_popup?: Record<string, unknown>;
+      };
+    };
+    prefs.browser = prefs.browser ?? {};
+    prefs.browser.window_placement = {
+      maximized: false,
+      left: STOREFRONT_WINDOW_LEFT,
+      top: STOREFRONT_WINDOW_TOP,
+      right: STOREFRONT_WINDOW_LEFT + STOREFRONT_WINDOW_WIDTH,
+      bottom: STOREFRONT_WINDOW_TOP + STOREFRONT_WINDOW_HEIGHT,
+      work_area_left: 0,
+      work_area_top: 0,
+      work_area_right: 3440,
+      work_area_bottom: 1440,
+    };
+    await writeFile(prefsPath, JSON.stringify(prefs), "utf8");
+    console.log(
+      `[storefront] reset window_placement to ${STOREFRONT_WINDOW_WIDTH}x${STOREFRONT_WINDOW_HEIGHT}`,
+    );
+  } catch (error) {
+    // First launch / missing prefs is fine.
+    console.log("[storefront] window_placement reset skipped:", error instanceof Error ? error.message : error);
+  }
+}
+
+async function setBrowserWindowOnScreen(page: Page, onScreen: boolean): Promise<void> {
+  try {
+    const session = await page.context().newCDPSession(page);
+    const { windowId } = (await session.send("Browser.getWindowForTarget")) as {
+      windowId: number;
+    };
+    // Use most of the work area height on the user's ultrawide (work_area_bottom ~1440).
+    const screen = await page.evaluate(() => ({
+      availWidth: window.screen.availWidth,
+      availHeight: window.screen.availHeight,
+    }));
+    const height = Math.max(
+      STOREFRONT_WINDOW_HEIGHT,
+      Math.min(STOREFRONT_WINDOW_HEIGHT + 200, Math.floor(screen.availHeight - 60)),
+    );
+    const width = STOREFRONT_WINDOW_WIDTH;
+    const bounds = onScreen
+      ? {
+          left: STOREFRONT_WINDOW_LEFT,
+          top: STOREFRONT_WINDOW_TOP,
+          width,
+          height,
+          windowState: "normal" as const,
+        }
+      : {
+          left: -2400,
+          top: -2400,
+          width,
+          height,
+          windowState: "normal" as const,
+        };
+    await session.send("Browser.setWindowBounds", { windowId, bounds } as never);
+    console.log("[storefront] window bounds applied", bounds);
+    if (onScreen) {
+      await page.bringToFront().catch(() => undefined);
+      liveOffscreen = false;
+    } else {
+      liveOffscreen = true;
+    }
+  } catch (error) {
+    console.error("[storefront] setWindowBounds failed:", error);
+  }
+}
+
+async function launchPersistentStorefrontContext(
+  options: LaunchStorefrontOptions = {},
+): Promise<BrowserContext> {
+  const offscreen = Boolean(options.offscreen);
+  const userDataDir = storefrontProfileDir();
+  await mkdir(userDataDir, { recursive: true });
+
+  await closeLiveContext();
+  await clearChromiumProfileLocks(userDataDir);
+  // Must run while Chromium is closed — Preferences are locked while the browser is open.
+  await resetChromiumWindowPlacement(userDataDir);
+
+  // Always headed: headless→visible relaunch fights the Windows profile lock.
+  // Off-screen window hides clear/product/option steps; reveal moves it on-screen.
+  const args = [
+    `--window-size=${STOREFRONT_WINDOW_WIDTH},${STOREFRONT_WINDOW_HEIGHT}`,
+    `--window-position=${offscreen ? "-2400,-2400" : `${STOREFRONT_WINDOW_LEFT},${STOREFRONT_WINDOW_TOP}`}`,
+    "--disable-session-crashed-bubble",
+    "--noerrdialogs",
+  ];
 
   liveContext = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
-    args: ["--window-size=1440,900", "--disable-session-crashed-bubble", "--noerrdialogs"],
+    args,
     viewport: null,
     userAgent:
       process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   });
+  liveOffscreen = offscreen;
 
-  // Open Session only: strip leftover Login.php / auth from the persistent profile.
+  // Strip leftover Login.php / auth from the persistent profile (keep CartID5).
   await clearVolusionAuthCookies(liveContext);
-  await closeRestoredPages(liveContext);
+  await closeRestoredLoginPages(liveContext);
+  console.log(`[storefront] launched ${offscreen ? "offscreen" : "visible"} persistent context`);
   return liveContext;
 }
 
-async function getOrCreateLiveSession(options: ScrapeStorefrontCartOptions = {}): Promise<Page> {
-  const profileDir = process.env.VOLUSION_PLAYWRIGHT_USER_DATA_DIR?.trim() || ".playwright-volusion-profile";
-
-  const userDataDir = resolve(profileDir);
-  await mkdir(userDataDir, { recursive: true });
-
-  const cartUrl = resolveCartUrl(options);
-
-  // Default to headless; set 0/false/no/off to open visible browser.
-  const headless = envHeadless(true);
-
-  if (!liveContext) {
-    liveContext = await chromium.launchPersistentContext(userDataDir, {
-      headless,
-      args: ["--window-size=1440,900"],
-      viewport: null,
-      userAgent:
-        process.env.VOLUSION_STORE_USER_AGENT?.trim() ||
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    });
-  }
-
-  if (!livePage || livePage.isClosed()) {
-    const existing = liveContext.pages().find((p) => !p.isClosed());
-    livePage = existing ?? (await liveContext.newPage());
-    await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
-    await delay(500);
-  }
-
-  return livePage;
+async function launchVisiblePersistentContext(): Promise<BrowserContext> {
+  return launchPersistentStorefrontContext({ offscreen: false });
 }
 
+function isContextAlive(context: BrowserContext | null): boolean {
+  if (!context) return false;
+  try {
+    // Accessing pages() throws when the browser/context was closed externally.
+    void context.pages();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type StorefrontSessionOptions = ScrapeStorefrontCartOptions & {
+  /**
+   * When true, park the Chromium window off-screen (Load into cart work).
+   * Prefer this over headless — same profile, no relaunch on reveal.
+   */
+  headless?: boolean;
+  offscreen?: boolean;
+};
+
+function wantsOffscreen(options: StorefrontSessionOptions): boolean {
+  if (options.offscreen !== undefined) return Boolean(options.offscreen);
+  // Legacy alias: rebuild previously passed headless:true to hide the UI.
+  if (options.headless !== undefined) return Boolean(options.headless);
+  return liveOffscreen;
+}
+
+async function getOrCreateLiveSession(options: StorefrontSessionOptions = {}): Promise<Page> {
+  const cartUrl = resolveCartUrl(options);
+  const wantOffscreen = wantsOffscreen(options);
+
+  // If Chromium was closed by the user, drop stale handles.
+  if (liveContext && !isContextAlive(liveContext)) {
+    liveContext = null;
+    livePage = null;
+    liveOffscreen = false;
+  }
+
+  if (!liveContext) {
+    liveContext = await launchPersistentStorefrontContext({ offscreen: wantOffscreen });
+  }
+
+  try {
+    if (!livePage || livePage.isClosed()) {
+      livePage = await getOrCreateContextPage(liveContext);
+      await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
+      await delay(500);
+    }
+    if (wantOffscreen && !liveOffscreen) {
+      await setBrowserWindowOnScreen(livePage, false);
+    } else if (!wantOffscreen && liveOffscreen) {
+      await setBrowserWindowOnScreen(livePage, true);
+    }
+    return livePage;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/has been closed|createTarget|Target page/i.test(message)) throw error;
+    console.error("[storefront] live session dead, relaunching:", message);
+    await closeLiveContext();
+    liveContext = await launchPersistentStorefrontContext({ offscreen: wantOffscreen });
+    livePage = await getOrCreateContextPage(liveContext);
+    await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
+    await delay(500);
+    return livePage;
+  }
+}
+
+/**
+ * Open / navigate the storefront cart session.
+ * Pass `{ offscreen: true }` (or legacy `headless: true`) to hide the window during rebuild.
+ */
 export async function openVolusionStorefrontCartSession(
-  options: ScrapeStorefrontCartOptions = {}
+  options: StorefrontSessionOptions = {},
 ): Promise<{ opened: true; url: string }> {
   const page = await getOrCreateLiveSession(options);
-  await page.goto(resolveCartUrl(options), { waitUntil: "load", timeout: 90_000 });
-  await delay(500);
-  return { opened: true, url: page.url() };
+  try {
+    await page.goto(resolveCartUrl(options), { waitUntil: "load", timeout: 90_000 });
+    await delay(500);
+    return { opened: true, url: page.url() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/has been closed|createTarget|Target page/i.test(message)) throw error;
+    await closeLiveContext();
+    const retry = await getOrCreateLiveSession(options);
+    await retry.goto(resolveCartUrl(options), { waitUntil: "load", timeout: 90_000 });
+    await delay(500);
+    return { opened: true, url: retry.url() };
+  }
 }
 
 /** Shared live Playwright cart page for rebuild / scrape flows. */
 export async function getVolusionStorefrontLivePage(
-  options: ScrapeStorefrontCartOptions = {},
+  options: StorefrontSessionOptions = {},
 ): Promise<Page> {
   return getOrCreateLiveSession(options);
+}
+
+/**
+ * After a hidden rebuild, move the same Chromium window on-screen onto ShoppingCart.
+ * No profile relaunch (avoids Windows user-data lock).
+ */
+export async function revealVisibleVolusionStorefrontCart(
+  options: ScrapeStorefrontCartOptions = {},
+): Promise<{ opened: true; url: string }> {
+  const cartUrl = resolveCartUrl(options);
+  console.log("[storefront] revealing on-screen cart after hidden rebuild");
+
+  if (!liveContext || !isContextAlive(liveContext)) {
+    liveContext = null;
+    livePage = null;
+    liveContext = await launchPersistentStorefrontContext({ offscreen: false });
+    livePage = await getOrCreateContextPage(liveContext);
+  }
+
+  if (!livePage || livePage.isClosed()) {
+    livePage = await getOrCreateContextPage(liveContext);
+  }
+
+  await livePage.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
+  await delay(400);
+  await setBrowserWindowOnScreen(livePage, true);
+  return { opened: true, url: livePage.url() };
 }
 
 /**
@@ -206,8 +431,10 @@ export async function getVolusionStorefrontLivePage(
  */
 export async function openVisibleVolusionHomepageSession(): Promise<{ opened: true; url: string }> {
   const context = await launchVisiblePersistentContext();
-  livePage = await context.newPage();
+  livePage = await getOrCreateContextPage(context);
   await ensureGuestStorefrontPage(livePage, STORE_HOME_URL);
+  // Persistent profile restores last bounds; force a tall window every open.
+  await setBrowserWindowOnScreen(livePage, true);
   return { opened: true, url: livePage.url() };
 }
 
@@ -223,6 +450,7 @@ export async function openVisibleVolusionCartSession(
   const navigateCart = async (page: Page) => {
     await page.goto(cartUrl, { waitUntil: "load", timeout: 90_000 });
     await delay(500);
+    await setBrowserWindowOnScreen(page, true);
     return { opened: true as const, url: page.url() };
   };
 
@@ -241,7 +469,7 @@ export async function openVisibleVolusionCartSession(
   }
 
   const context = await launchVisiblePersistentContext();
-  livePage = await context.newPage();
+  livePage = await getOrCreateContextPage(context);
   return await navigateCart(livePage);
 }
 
@@ -501,7 +729,7 @@ async function resolveAbandonedCartGuidFromLivePage(page: Page): Promise<string 
  * Scrape cart data from the live opened Playwright session.
  */
 export async function scrapeVolusionStorefrontCart(
-  options: ScrapeStorefrontCartOptions = {}
+  options: StorefrontSessionOptions = {},
 ): Promise<CartPayload> {
   const cartUrl = resolveCartUrl(options);
   const page = await getOrCreateLiveSession(options);
@@ -583,7 +811,7 @@ function resolveClearCartUrl(cartUrl: string): string {
 
 /** Clear the Volusion storefront cart via ShoppingCart.php?ClearCart=Y. */
 export async function clearVolusionStorefrontCart(
-  options: ScrapeStorefrontCartOptions = {}
+  options: StorefrontSessionOptions = {},
 ): Promise<ClearVolusionCartResult> {
   const clearCartUrl = resolveClearCartUrl(resolveCartUrl(options));
   const page = await getOrCreateLiveSession(options);
@@ -601,9 +829,5 @@ export async function clearVolusionStorefrontCart(
 }
 
 export async function closeVolusionStorefrontCartSession(): Promise<void> {
-  if (liveContext) {
-    await liveContext.close();
-  }
-  liveContext = null;
-  livePage = null;
+  await closeLiveContext();
 }
