@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("customQuote", {
 
 contextBridge.exposeInMainWorld("electronUpdater", {
   getState: () => ipcRenderer.invoke("updater:get-state"),
+  listVersions: () => ipcRenderer.invoke("updater:list-versions"),
+  installVersion: (version) =>
+    ipcRenderer.invoke("updater:install-version", version),
   downloadUpdate: () => ipcRenderer.invoke("updater:download"),
   quitAndInstall: () => ipcRenderer.invoke("updater:quit-and-install"),
   remindLater: () => ipcRenderer.invoke("updater:remind-later"),

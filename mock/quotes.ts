@@ -24,8 +24,8 @@ export interface QuoteItem {
 export interface Quote {
   id: string;
   quoteNumber: string;
-  status: "draft" | "final";
-  version: number;
+  status: "draft" | "saved" | "final";
+  version: string | number;
   customerName?: string | null;
   customerCompany?: string | null;
   customerEmail?: string | null;

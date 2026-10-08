@@ -29,9 +29,9 @@ Quote.init(
       defaultValue: "draft",
     },
     version: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 1,
+      defaultValue: "1",
     },
     customerName: {
       type: DataTypes.STRING,

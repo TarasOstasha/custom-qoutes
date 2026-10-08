@@ -7,10 +7,15 @@ export type UpdaterStatus =
   | "downloaded"
   | "error";
 
+export type InstallMode = "update" | "revert";
+
 export type UpdaterSnapshot = {
   status: UpdaterStatus;
   currentVersion: string;
   newVersion: string | null;
+  targetVersion?: string | null;
+  installMode?: InstallMode | null;
+  availableVersions?: string[];
   percent: number;
   error: string | null;
   dismissed: boolean;
@@ -18,6 +23,15 @@ export type UpdaterSnapshot = {
 
 export type ElectronUpdaterApi = {
   getState: () => Promise<UpdaterSnapshot>;
+  listVersions: () => Promise<{
+    ok: boolean;
+    versions: string[];
+    currentVersion?: string;
+    error?: string;
+  }>;
+  installVersion: (
+    version: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   downloadUpdate: () => Promise<{ ok: boolean; error?: string }>;
   quitAndInstall: () => Promise<void>;
   remindLater: () => Promise<void>;

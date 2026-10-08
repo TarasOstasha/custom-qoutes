@@ -51,6 +51,21 @@ async function initializeRoutes(app: Express): Promise<void> {
     await addIfMissing("sales_contact", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("abandoned_cart_id", { type: DataTypes.STRING, allowNull: true });
     await addIfMissing("abandoned_cart_lines_json", { type: DataTypes.JSONB, allowNull: true });
+
+    // App version strings (e.g. "1.1.6") are stored on quotes.version.
+    const refreshed = await qi.describeTable("quotes");
+    const versionType = String(refreshed.version?.type ?? "").toLowerCase();
+    const versionIsString =
+      versionType.includes("char") ||
+      versionType.includes("text") ||
+      versionType.includes("string");
+    if (refreshed.version && !versionIsString) {
+      await qi.changeColumn("quotes", "version", {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "1",
+      });
+    }
   }
 
   sequelize
@@ -87,6 +102,34 @@ async function initializeRoutes(app: Express): Promise<void> {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to open cart in live session";
       return res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/app-versions", async (_req: Request, res: Response) => {
+    try {
+      const fs = require("node:fs") as typeof import("node:fs");
+      const path = require("node:path") as typeof import("node:path");
+      const { discoverAppVersions } = require("./lib/discoverAppVersions") as typeof import("./lib/discoverAppVersions");
+      const packageCandidates = [
+        path.join(__dirname, "package.json"),
+        path.join(__dirname, "..", "package.json"),
+        path.join(process.cwd(), "package.json"),
+      ];
+      let currentVersion = "0.0.0";
+      for (const candidate of packageCandidates) {
+        if (!fs.existsSync(candidate)) {
+          continue;
+        }
+        currentVersion =
+          (require(candidate) as { version?: string }).version || currentVersion;
+        break;
+      }
+      const versions = await discoverAppVersions({ currentVersion });
+      return res.json({ ok: true, versions, currentVersion });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to list app versions";
+      return res.status(500).json({ ok: false, error: message, versions: [] });
     }
   });
 

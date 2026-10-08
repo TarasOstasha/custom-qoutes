@@ -541,7 +541,7 @@ const createQuote = async (req: Request, res: Response) => {
         quoteNumber,
         quoteDate: toStringOrNull(pickBodyValue(body, "quote_date", "quoteDate")),
         status: (toStringOrNull(body.status) ?? "draft"),
-        version: Number(body.version ?? 1),
+        version: String(body.version ?? "1"),
         customerName: toStringOrNull(pickBodyValue(body, "customer_name", "customerName")),
         company: toStringOrNull(body.company),
         email: toStringOrNull(body.email),
@@ -655,7 +655,7 @@ router.put("/:id", async (req: Request, res: Response) => {
       updates.quoteDate = toStringOrNull(pickBodyValue(body, "quote_date", "quoteDate"));
     }
     if (body.status !== undefined) updates.status = String(body.status);
-    if (body.version !== undefined) updates.version = Number(body.version);
+    if (body.version !== undefined) updates.version = String(body.version);
     if (pickBodyValue(body, "customer_name", "customerName") !== undefined) {
       updates.customerName = toStringOrNull(pickBodyValue(body, "customer_name", "customerName"));
     }

@@ -66,6 +66,8 @@ import {
   normalizeAbandonedCartLines,
 } from "../../lib/abandonedCart";
 import type { AbandonedCartLine, AbandonedCartSummary } from "../../lib/abandonedCart";
+import { version as packageVersion } from "../../package.json";
+import { useAppUpdater } from "../../components/ElectronUpdaterBridge";
 import AddPopupWindow from "../../components/AddPopupWindow";
 import QuoteCalculator, { PriceCalculatorTrigger } from "../../components/QuoteCalculator";
 
@@ -193,7 +195,7 @@ type ApiQuote = {
   quote_number?: string;
   quoteDate: string | null;
   status: string;
-  version: number;
+  version: string | number;
   customerName: string | null;
   company: string | null;
   email: string | null;
@@ -263,6 +265,8 @@ function shouldAssignNextQuoteNumber(candidate: { id: string; quoteNumber: strin
 }
 
 export default function QuoteBuilderPage() {
+  const { state: updaterState } = useAppUpdater();
+  const appVersion = updaterState.currentVersion || packageVersion;
   const [quote, setQuote] = useState<Quote>(() => createEmptyQuote());
   const [loadedQuoteId, setLoadedQuoteId] = useState<string | null>(null);
   const [originalLoadedQuoteNumber, setOriginalLoadedQuoteNumber] = useState<string | null>(null);
@@ -355,6 +359,7 @@ export default function QuoteBuilderPage() {
   const [abandonedCartSearchResults, setAbandonedCartSearchResults] = useState<AbandonedCartSummary[]>([]);
   const [abandonedCartMessage, setAbandonedCartMessage] = useState<string | null>(null);
   const [abandonedCartError, setAbandonedCartError] = useState<string | null>(null);
+  const [showAbandonedCartDevTools, setShowAbandonedCartDevTools] = useState(false);
   const [calculatorTarget, setCalculatorTarget] = useState<CalculatorTarget | null>(null);
   const [saveQuoteLoading, setSaveQuoteLoading] = useState(false);
   const [saveQuoteSuccess, setSaveQuoteSuccess] = useState<string | null>(null);
@@ -1382,7 +1387,7 @@ export default function QuoteBuilderPage() {
           abandonedCartId: data.newCartId!,
           abandonedCartLines: sourceLines.length
             ? sourceLines
-            : prev.abandonedCartLines,
+            : (prev.abandonedCartLines ?? null),
         }));
         // Refresh snapshot from the new GUID while it still exists in CartIDLog.
         void snapshotAbandonedCartFromAdmin(data.newCartId);
@@ -1476,12 +1481,11 @@ export default function QuoteBuilderPage() {
   };
 
   const buildSavePayload = (options?: { forceNewQuote?: boolean; quoteNumber?: string }) => {
-    const isNewInsert = options?.forceNewQuote ?? !loadedQuoteId;
     return {
       quote_number: (options?.quoteNumber ?? quote.quoteNumber).trim(),
       quote_date: quoteDateToInputValue(quote.quoteDate),
-      status: quote.status,
-      version: isNewInsert ? 1 : quote.version,
+      status: "saved",
+      version: appVersion,
       customer_name: quote.customerName ?? null,
       company: quote.customerCompany ?? null,
       email: quote.customerEmail ?? null,
@@ -1577,9 +1581,22 @@ export default function QuoteBuilderPage() {
             ...prev,
             id: nextId,
             quoteNumber: payload.quote_number,
-            version: options?.forceNewQuote ? 1 : prev.version,
+            status: "saved",
+            version: appVersion,
+          }));
+        } else {
+          setQuote((prev) => ({
+            ...prev,
+            status: "saved",
+            version: appVersion,
           }));
         }
+      } else {
+        setQuote((prev) => ({
+          ...prev,
+          status: "saved",
+          version: appVersion,
+        }));
       }
 
       setSaveQuoteSuccess(successMessage);
@@ -1753,8 +1770,11 @@ export default function QuoteBuilderPage() {
       const draft: Quote = {
         id: data.id,
         quoteNumber: readApiQuoteNumber(data),
-        status: data.status === "final" ? "final" : "draft",
-        version: asNumber(data.version) || 1,
+        status:
+          data.status === "final" || data.status === "saved" || data.status === "draft"
+            ? data.status
+            : "draft",
+        version: String(data.version ?? "1"),
         customerName: data.customerName ?? null,
         customerCompany: data.company ?? null,
         customerEmail: data.email ?? null,
@@ -2686,59 +2706,29 @@ export default function QuoteBuilderPage() {
               </button>
             </div>
             <div style={{ marginTop: 12 }}>
-              <label className="muted" style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
-                Load abandoned / live cart (GUID or email)
-              </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                <input
-                  type="text"
-                  value={abandonedCartQuery}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setAbandonedCartQuery(value);
-                    const trimmed = value.trim();
-                    setQuote((prev) => ({
-                      ...prev,
-                      abandonedCartId: looksLikeCartId(trimmed) ? trimmed : prev.abandonedCartId,
-                    }));
-                  }}
-                  placeholder="Cart GUID or customer email"
-                  disabled={abandonedCartSearchLoading || abandonedCartRebuildLoading}
-                  style={{
-                    minWidth: 280,
-                    flex: "1 1 240px",
-                    padding: "8px 10px",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: 6,
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void searchOrLoadAbandonedCart();
-                    }
-                  }}
-                />
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => void searchOrLoadAbandonedCart()}
+                  onClick={() => {
+                    const id = (quote.abandonedCartId || abandonedCartQuery).trim();
+                    if (!id) {
+                      setAbandonedCartError("No abandoned cart ID on this quote");
+                      return;
+                    }
+                    void rebuildAbandonedCart(id);
+                  }}
                   disabled={
-                    abandonedCartSearchLoading ||
                     abandonedCartRebuildLoading ||
-                    // GUID / Load into cart requires an open live session first.
-                    (!looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl)
-                  }
-                  aria-disabled={
-                    abandonedCartSearchLoading ||
-                    abandonedCartRebuildLoading ||
-                    (!looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl)
-                      ? true
-                      : undefined
+                    !liveSessionUrl ||
+                    !(quote.abandonedCartId || abandonedCartQuery).trim()
                   }
                   title={
-                    !looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl
+                    !liveSessionUrl
                       ? "Open Live Website Session first"
-                      : undefined
+                      : !(quote.abandonedCartId || abandonedCartQuery).trim()
+                        ? "No abandoned cart ID on this quote"
+                        : undefined
                   }
                   style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
                 >
@@ -2747,66 +2737,153 @@ export default function QuoteBuilderPage() {
                       <span className="quote-builder-identify-spinner" aria-hidden />
                       Loading into cart…
                     </>
-                  ) : abandonedCartSearchLoading ? (
-                    <>
-                      <span className="quote-builder-identify-spinner" aria-hidden />
-                      Searching…
-                    </>
-                  ) : looksLikeEmail(abandonedCartQuery.trim()) ? (
-                    "Search carts"
                   ) : (
                     "Load into cart"
                   )}
                 </button>
+                <label
+                  className="muted"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showAbandonedCartDevTools}
+                    onChange={(e) => setShowAbandonedCartDevTools(e.target.checked)}
+                  />
+                  Dev tools
+                </label>
               </div>
               {!liveSessionUrl ? (
                 <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
                   Open Live Website Session before loading a cart into the storefront.
                 </div>
               ) : null}
-              {abandonedCartSearchResults.length > 0 ? (
-                <div
-                  style={{
-                    marginTop: 8,
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 6,
-                    maxHeight: 220,
-                    overflow: "auto",
-                  }}
-                >
-                  {abandonedCartSearchResults.map((cart) => (
-                    <button
-                      key={cart.cartId}
-                      type="button"
-                      onClick={() => void rebuildAbandonedCart(cart.cartId)}
-                      disabled={abandonedCartRebuildLoading || !liveSessionUrl}
-                      title={!liveSessionUrl ? "Open Live Website Session first" : undefined}
+              {showAbandonedCartDevTools ? (
+                <>
+                  <label
+                    className="muted"
+                    style={{ display: "block", fontSize: 13, marginTop: 10, marginBottom: 6 }}
+                  >
+                    Load abandoned / live cart (GUID or email)
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={abandonedCartQuery}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAbandonedCartQuery(value);
+                        const trimmed = value.trim();
+                        setQuote((prev) => ({
+                          ...prev,
+                          abandonedCartId: looksLikeCartId(trimmed)
+                            ? trimmed
+                            : (prev.abandonedCartId ?? null),
+                        }));
+                      }}
+                      placeholder="Cart GUID or customer email"
+                      disabled={abandonedCartSearchLoading || abandonedCartRebuildLoading}
                       style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
+                        minWidth: 280,
+                        flex: "1 1 240px",
                         padding: "8px 10px",
-                        border: "none",
-                        borderBottom: "1px solid #f1f5f9",
-                        background: "transparent",
-                        cursor:
-                          abandonedCartRebuildLoading || !liveSessionUrl ? "default" : "pointer",
-                        opacity: !liveSessionUrl ? 0.55 : 1,
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 6,
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void searchOrLoadAbandonedCart();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void searchOrLoadAbandonedCart()}
+                      disabled={
+                        abandonedCartSearchLoading ||
+                        abandonedCartRebuildLoading ||
+                        (!looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl)
+                      }
+                      aria-disabled={
+                        abandonedCartSearchLoading ||
+                        abandonedCartRebuildLoading ||
+                        (!looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl)
+                          ? true
+                          : undefined
+                      }
+                      title={
+                        !looksLikeEmail(abandonedCartQuery.trim()) && !liveSessionUrl
+                          ? "Open Live Website Session first"
+                          : undefined
+                      }
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                    >
+                      {abandonedCartRebuildLoading ? (
+                        <>
+                          <span className="quote-builder-identify-spinner" aria-hidden />
+                          Loading into cart…
+                        </>
+                      ) : abandonedCartSearchLoading ? (
+                        <>
+                          <span className="quote-builder-identify-spinner" aria-hidden />
+                          Searching…
+                        </>
+                      ) : looksLikeEmail(abandonedCartQuery.trim()) ? (
+                        "Search carts"
+                      ) : (
+                        "Load into cart"
+                      )}
+                    </button>
+                  </div>
+                  {abandonedCartSearchResults.length > 0 ? (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 6,
+                        maxHeight: 220,
+                        overflow: "auto",
                       }}
                     >
-                      <div style={{ fontFamily: "monospace", fontSize: 12 }}>{cart.cartId}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {[
-                          cart.itemCount != null ? `${cart.itemCount} item(s)` : null,
-                          cart.lastModified,
-                          cart.email,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                      {abandonedCartSearchResults.map((cart) => (
+                        <button
+                          key={cart.cartId}
+                          type="button"
+                          onClick={() => void rebuildAbandonedCart(cart.cartId)}
+                          disabled={abandonedCartRebuildLoading || !liveSessionUrl}
+                          title={!liveSessionUrl ? "Open Live Website Session first" : undefined}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "8px 10px",
+                            border: "none",
+                            borderBottom: "1px solid #f1f5f9",
+                            background: "transparent",
+                            cursor:
+                              abandonedCartRebuildLoading || !liveSessionUrl
+                                ? "default"
+                                : "pointer",
+                            opacity: !liveSessionUrl ? 0.55 : 1,
+                          }}
+                        >
+                          <div style={{ fontFamily: "monospace", fontSize: 12 }}>{cart.cartId}</div>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {[
+                              cart.itemCount != null ? `${cart.itemCount} item(s)` : null,
+                              cart.lastModified,
+                              cart.email,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : null}
               {abandonedCartMessage ? (
                 <div className="muted" style={{ marginTop: 8, fontSize: 12, color: "var(--success, #0a7a2f)" }}>

@@ -35,8 +35,9 @@ export type QuoteItem = {
 export type Quote = {
   id: string;
   quoteNumber: string;
-  status: "draft" | "final";
-  version: number;
+  status: "draft" | "saved" | "final";
+  /** App version that last saved this quote (e.g. "1.1.6"), or legacy revision number. */
+  version: string | number;
   customerName?: string | null;
   customerCompany?: string | null;
   customerEmail?: string | null;

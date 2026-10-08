@@ -6,7 +6,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare quoteNumber: string;
   declare quoteDate: string | null;
   declare status: CreationOptional<string>;
-  declare version: CreationOptional<number>;
+  declare version: CreationOptional<string>;
   declare customerName: string | null;
   declare company: string | null;
   declare email: string | null;
@@ -60,9 +60,9 @@ Quote.init(
       defaultValue: "draft",
     },
     version: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 1,
+      defaultValue: "1",
     },
     customerName: {
       type: DataTypes.STRING,

@@ -25,8 +25,28 @@ export default function UpdateModal({
     return null;
   }
 
+  const isRevert = state.installMode === "revert";
   const isDownloading = state.status === "downloading";
   const isDownloaded = state.status === "downloaded";
+  const targetVersion = state.targetVersion || state.newVersion;
+
+  const title = isRevert
+    ? isDownloaded
+      ? "Revert Ready"
+      : "Reverting Version"
+    : isDownloaded
+      ? "Update Ready"
+      : "Update Available";
+
+  const copy = isRevert
+    ? isDownloaded
+      ? `Version ${targetVersion} has been downloaded. The installer should open shortly — follow it to finish reverting.`
+      : isDownloading
+        ? `Downloading version ${targetVersion} so you can revert.`
+        : `Preparing to revert to version ${targetVersion}.`
+    : isDownloaded
+      ? "A new version has been downloaded and is ready to install."
+      : "A newer version of Custom Quote is available.";
 
   return (
     <div className="update-modal-overlay" role="presentation" onClick={onClose}>
@@ -38,14 +58,10 @@ export default function UpdateModal({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="update-modal-title" className="update-modal-title">
-          {isDownloaded ? "Update Ready" : "Update Available"}
+          {title}
         </h2>
 
-        <p className="update-modal-copy">
-          {isDownloaded
-            ? "A new version has been downloaded and is ready to install."
-            : "A newer version of Custom Quote is available."}
-        </p>
+        <p className="update-modal-copy">{copy}</p>
 
         <dl className="update-modal-versions">
           <div>
@@ -53,8 +69,8 @@ export default function UpdateModal({
             <dd>{state.currentVersion || "—"}</dd>
           </div>
           <div>
-            <dt>New version</dt>
-            <dd>{state.newVersion || "—"}</dd>
+            <dt>{isRevert ? "Revert to" : "New version"}</dt>
+            <dd>{targetVersion || "—"}</dd>
           </div>
         </dl>
 
@@ -80,17 +96,31 @@ export default function UpdateModal({
 
         <div className="update-modal-actions">
           {isDownloaded ? (
-            <>
-              <button type="button" className="btn" onClick={onRestartLater}>
-                Later
+            isRevert ? (
+              <button type="button" className="btn primary" onClick={onClose}>
+                Close
               </button>
-              <button type="button" className="btn primary" onClick={onRestartNow}>
-                Restart Now
-              </button>
-            </>
+            ) : (
+              <>
+                <button type="button" className="btn" onClick={onRestartLater}>
+                  Later
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={onRestartNow}
+                >
+                  Restart Now
+                </button>
+              </>
+            )
           ) : isDownloading ? (
             <button type="button" className="btn" onClick={onClose}>
               Hide
+            </button>
+          ) : isRevert ? (
+            <button type="button" className="btn" onClick={onClose}>
+              Close
             </button>
           ) : (
             <>
