@@ -45,6 +45,9 @@ export type Quote = {
   customerAddress?: string | null;
   /** Free-text customer account id shown on the estimate and exports. */
   customerId?: string | null;
+  /** Free-text deadlines shown under Quote and Date on the PDF. */
+  deliveryDeadline?: string | null;
+  artDeadline?: string | null;
   notes?: string | null;
   /** Staff-only notes. Never included on the estimate, PDF, or Excel. */
   internalNotes?: string | null;
@@ -223,6 +226,8 @@ export function createEmptyQuote(): Quote {
     customerPhone: null,
     customerAddress: null,
     customerId: null,
+    deliveryDeadline: null,
+    artDeadline: null,
     notes: null,
     internalNotes: null,
     internalAttachments: [],

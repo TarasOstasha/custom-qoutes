@@ -123,6 +123,36 @@ export default function QuotePreviewPage() {
                 </tr>
               </tbody>
             </table>
+            {quote.deliveryDeadline?.trim() || quote.artDeadline?.trim() ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  width: 210,
+                  marginTop: 8,
+                  gap: 8,
+                  textAlign: "center",
+                  fontSize: 12,
+                }}
+              >
+                <div>
+                  {quote.deliveryDeadline?.trim() ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 11 }}>Delivery Deadline</div>
+                      <div style={{ whiteSpace: "pre-wrap" }}>{quote.deliveryDeadline}</div>
+                    </>
+                  ) : null}
+                </div>
+                <div>
+                  {quote.artDeadline?.trim() ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 11 }}>Art Deadline</div>
+                      <div style={{ whiteSpace: "pre-wrap" }}>{quote.artDeadline}</div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
 
         </div>

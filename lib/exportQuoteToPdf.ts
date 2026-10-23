@@ -319,6 +319,44 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
     align: "center",
   });
 
+  const deliveryDeadline = quote.deliveryDeadline?.trim() ?? "";
+  const artDeadline = quote.artDeadline?.trim() ?? "";
+  let deadlineBottom = metaY + metaH;
+  if (deliveryDeadline || artDeadline) {
+    const columnWidth = metaW / 2 - 8;
+    const labelY = metaY + metaH + 16;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    if (deliveryDeadline) {
+      doc.text("Delivery Deadline", metaX + metaW * 0.25, labelY, { align: "center" });
+    }
+    if (artDeadline) {
+      doc.text("Art Deadline", metaX + metaW * 0.75, labelY, { align: "center" });
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    const valueStartY = labelY + 13;
+    const drawCenteredLines = (text: string, centerX: number) => {
+      const lines = wrapPdfText(doc, text, columnWidth, 11);
+      lines.forEach((line, index) => {
+        doc.text(line, centerX, valueStartY + index * 13, { align: "center" });
+      });
+      return valueStartY + Math.max(lines.length - 1, 0) * 13;
+    };
+    if (deliveryDeadline) {
+      deadlineBottom = Math.max(
+        deadlineBottom,
+        drawCenteredLines(deliveryDeadline, metaX + metaW * 0.25),
+      );
+    }
+    if (artDeadline) {
+      deadlineBottom = Math.max(
+        deadlineBottom,
+        drawCenteredLines(artDeadline, metaX + metaW * 0.75),
+      );
+    }
+  }
+
   // TO section: keep customer text in the middle column so it never overlaps QUOTE/DATE
   const toX = margin + 175;
   const toY = 44;
@@ -340,7 +378,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   });
 
   // Extra clearance so the rule sits below customer email descenders
-  const headerBottom = Math.max(yLeft, metaY + metaH, yTo) + 20;
+  const headerBottom = Math.max(yLeft, deadlineBottom, yTo) + 20;
   doc.setDrawColor(209, 213, 219);
   doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
 

@@ -544,6 +544,8 @@ const createQuote = async (req: Request, res: Response) => {
         version: String(body.version ?? "1"),
         customerName: toStringOrNull(pickBodyValue(body, "customer_name", "customerName")),
         customerId: toStringOrNull(pickBodyValue(body, "customer_id", "customerId")),
+        deliveryDeadline: toStringOrNull(pickBodyValue(body, "delivery_deadline", "deliveryDeadline")),
+        artDeadline: toStringOrNull(pickBodyValue(body, "art_deadline", "artDeadline")),
         company: toStringOrNull(body.company),
         email: toStringOrNull(body.email),
         phone: toStringOrNull(body.phone),
@@ -662,6 +664,14 @@ router.put("/:id", async (req: Request, res: Response) => {
     }
     if (pickBodyValue(body, "customer_id", "customerId") !== undefined) {
       updates.customerId = toStringOrNull(pickBodyValue(body, "customer_id", "customerId"));
+    }
+    if (pickBodyValue(body, "delivery_deadline", "deliveryDeadline") !== undefined) {
+      updates.deliveryDeadline = toStringOrNull(
+        pickBodyValue(body, "delivery_deadline", "deliveryDeadline"),
+      );
+    }
+    if (pickBodyValue(body, "art_deadline", "artDeadline") !== undefined) {
+      updates.artDeadline = toStringOrNull(pickBodyValue(body, "art_deadline", "artDeadline"));
     }
     if (body.company !== undefined) updates.company = (body.company as string | null) ?? null;
     if (body.email !== undefined) updates.email = (body.email as string | null) ?? null;

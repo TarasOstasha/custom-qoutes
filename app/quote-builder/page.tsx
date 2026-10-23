@@ -201,6 +201,10 @@ type ApiQuote = {
   customerName: string | null;
   customerId?: string | null;
   customer_id?: string | null;
+  deliveryDeadline?: string | null;
+  delivery_deadline?: string | null;
+  artDeadline?: string | null;
+  art_deadline?: string | null;
   company: string | null;
   email: string | null;
   phone: string | null;
@@ -1497,6 +1501,8 @@ export default function QuoteBuilderPage() {
       phone: quote.customerPhone ?? null,
       address: quote.customerAddress ?? null,
       customer_id: quote.customerId?.trim() || null,
+      delivery_deadline: quote.deliveryDeadline?.trim() || null,
+      art_deadline: quote.artDeadline?.trim() || null,
       notes: quote.notes ?? null,
       internal_notes: quote.internalNotes ?? null,
       estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
@@ -1787,6 +1793,8 @@ export default function QuoteBuilderPage() {
         customerPhone: data.phone ?? null,
         customerAddress: data.address ?? null,
         customerId: data.customerId ?? data.customer_id ?? null,
+        deliveryDeadline: data.deliveryDeadline ?? data.delivery_deadline ?? null,
+        artDeadline: data.artDeadline ?? data.art_deadline ?? null,
         notes: data.notes ?? null,
         internalNotes: data.internalNotes ?? data.internal_notes ?? null,
         estimateValidDays: normalizeEstimateValidDays(
@@ -2236,21 +2244,60 @@ export default function QuoteBuilderPage() {
               textAlign: "left",
             }}
           />
-          <label htmlFor="customer-id" style={{ marginTop: 14 }}>
-            Customer ID
-          </label>
-          <input
-            id="customer-id"
-            value={quote.customerId ?? ""}
-            onChange={(e) =>
-              setQuote((prev) => ({
-                ...prev,
-                customerId: e.target.value || null,
-              }))
-            }
-            placeholder="Customer ID"
-            style={{ marginTop: 6 }}
-          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gap: 12,
+              marginTop: 14,
+            }}
+          >
+            <div>
+              <label htmlFor="customer-id">Customer ID</label>
+              <input
+                id="customer-id"
+                value={quote.customerId ?? ""}
+                onChange={(e) =>
+                  setQuote((prev) => ({
+                    ...prev,
+                    customerId: e.target.value || null,
+                  }))
+                }
+                placeholder="Customer ID"
+                style={{ marginTop: 6 }}
+              />
+            </div>
+            <div>
+              <label htmlFor="delivery-deadline">Delivery Deadline</label>
+              <input
+                id="delivery-deadline"
+                value={quote.deliveryDeadline ?? ""}
+                onChange={(e) =>
+                  setQuote((prev) => ({
+                    ...prev,
+                    deliveryDeadline: e.target.value || null,
+                  }))
+                }
+                placeholder="Delivery Deadline"
+                style={{ marginTop: 6 }}
+              />
+            </div>
+            <div>
+              <label htmlFor="art-deadline">Art Deadline</label>
+              <input
+                id="art-deadline"
+                value={quote.artDeadline ?? ""}
+                onChange={(e) =>
+                  setQuote((prev) => ({
+                    ...prev,
+                    artDeadline: e.target.value || null,
+                  }))
+                }
+                placeholder="Art Deadline"
+                style={{ marginTop: 6 }}
+              />
+            </div>
+          </div>
         </div>
 
         <div className={`quote-builder-work-area${calculatorOpen ? " quote-builder-work-area-with-calc" : ""}`}>
