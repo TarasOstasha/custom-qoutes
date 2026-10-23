@@ -2203,7 +2203,7 @@ export default function QuoteBuilderPage() {
           </div>
           <div>
             <label>Version</label>
-            <input value={String(quote.version)} readOnly />
+            <input value={`v${appVersion}`} readOnly />
           </div>
           </div>
         </div>
