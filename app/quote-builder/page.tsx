@@ -1378,7 +1378,14 @@ export default function QuoteBuilderPage() {
         error?: string;
       };
       if (!response.ok && !(data.added && data.added.length > 0)) {
-        setAbandonedCartError(data?.error ?? "Failed to load cart into storefront");
+        const failedDetail = (data.failed ?? [])
+          .map((row) => `${row.productCode}${row.error ? ` (${row.error})` : ""}`)
+          .filter(Boolean)
+          .join(", ");
+        const summary = data?.error ?? "Failed to load cart into storefront";
+        setAbandonedCartError(
+          failedDetail && !summary.includes(failedDetail) ? `${summary} ${failedDetail}` : summary,
+        );
         return;
       }
       if (data.cartUrl) {
@@ -1782,10 +1789,7 @@ export default function QuoteBuilderPage() {
       const draft: Quote = {
         id: data.id,
         quoteNumber: readApiQuoteNumber(data),
-        status:
-          data.status === "final" || data.status === "saved" || data.status === "draft"
-            ? data.status
-            : "draft",
+        status: "saved",
         version: String(data.version ?? "1"),
         customerName: data.customerName ?? null,
         customerCompany: data.company ?? null,
@@ -1858,8 +1862,17 @@ export default function QuoteBuilderPage() {
     }
   };
 
-  const startNewQuote = () => {
-    if (!window.confirm("Start a new quote? This clears the current quote from this browser.")) return;
+  const startNewQuote = async () => {
+    const result = await Swal.fire({
+      title: "Start a new quote?",
+      text: "This clears the current quote from this browser.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, start new quote",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
     clearQuoteDraft();
     setLastCartPayload(null);
     setLoadedQuoteId(null);
@@ -2199,7 +2212,7 @@ export default function QuoteBuilderPage() {
           </div>
           <div>
             <label>Status</label>
-            <input value={quote.status} readOnly />
+            <input value={loadedQuoteId ? "saved" : quote.status} readOnly />
           </div>
           <div>
             <label>Version</label>

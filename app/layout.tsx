@@ -4,7 +4,7 @@ import AppHeader from "../components/AppHeader";
 import ElectronUpdaterBridge from "../components/ElectronUpdaterBridge";
 
 export const metadata: Metadata = {
-  title: "xyzDiplays Custom Quote App",
+  title: "xyzDisplays Custom Quote App",
   description: "Frontend-only quote app",
 };
 

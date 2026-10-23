@@ -132,22 +132,14 @@ async function selectOptionIdsOnProductPage(
   }, optionIds);
 }
 
-async function clickUpdatePriceIfPresent(page: Page): Promise<void> {
-  const btn = page
-    .locator(
-      'input[value*="Update Price" i], button:has-text("Update Price"), a:has-text("Update Price")',
-    )
-    .first();
-  if (await btn.isVisible().catch(() => false)) {
-    await btn.click({ timeout: 5_000 }).catch(() => undefined);
-    await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-    await delay(400);
-  }
-}
-
-async function setQuantity(page: Page, qty: number): Promise<void> {
+async function setQuantity(page: Page, qty: number, productCode: string): Promise<void> {
   const safeQty = Math.max(1, Math.trunc(qty) || 1);
+  const code = productCode.trim();
   const qtySelectors = [
+    ...(code
+      ? [`input[name="QTY.${code}"]`, `input[name="QTY.${code.toLowerCase()}"]`]
+      : []),
+    'input[name^="QTY."]',
     'input[name="Quantity"]',
     'input[name="quantity"]',
     'input[name="Qty"]',
@@ -164,82 +156,6 @@ async function setQuantity(page: Page, qty: number): Promise<void> {
   }
 }
 
-async function dismissOverlays(page: Page): Promise<void> {
-  await page
-    .evaluate(() => {
-      const hide = (el: Element | null) => {
-        if (el instanceof HTMLElement) el.style.setProperty("display", "none", "important");
-      };
-      hide(document.getElementById("chat-widget-container"));
-      hide(document.getElementById("chat-widget"));
-      hide(document.querySelector('[id*="livechat" i]'));
-      hide(document.querySelector(".lc-frame"));
-    })
-    .catch(() => undefined);
-}
-
-async function clickAddToCart(page: Page): Promise<boolean> {
-  await dismissOverlays(page);
-  const selectors = [
-    "#btn_addtocart",
-    'input[name="btnaddtocart"]',
-    'input[name="btnAddToCart"]',
-    'input[value*="Add to Cart" i]',
-    'input[value*="Add To Cart" i]',
-    'button:has-text("Add to Cart")',
-    'button:has-text("Add To Cart")',
-    'a:has-text("Add to Cart")',
-    'a:has-text("Add To Cart")',
-    'input[type="submit"][value*="Add" i]',
-    "#btnAddToCart",
-    ".btn-add-to-cart",
-    ".btn_addtocart",
-  ];
-  for (const selector of selectors) {
-    const el = page.locator(selector).first();
-    if (await el.isVisible().catch(() => false)) {
-      try {
-        await el.click({ timeout: 5_000, force: true });
-        return true;
-      } catch {
-        // LiveChat / sticky footers often intercept; fall through to JS click.
-      }
-      const clicked = await el
-        .evaluate((node) => {
-          if (node instanceof HTMLElement) {
-            node.click();
-            return true;
-          }
-          return false;
-        })
-        .catch(() => false);
-      if (clicked) return true;
-    }
-  }
-
-  // Last resort: Volusion's own addToCart helper on the product form.
-  const viaFn = await page
-    .evaluate(() => {
-      const btn =
-        (document.getElementById("btn_addtocart") as HTMLInputElement | null) ||
-        (document.querySelector('input[name="btnaddtocart"]') as HTMLInputElement | null);
-      const form = btn?.form || (document.querySelector("form") as HTMLFormElement | null);
-      const addFn = (window as unknown as { addToCart?: (f: HTMLFormElement, b: HTMLElement) => unknown })
-        .addToCart;
-      if (btn && form && typeof addFn === "function") {
-        addFn(form, btn);
-        return true;
-      }
-      if (btn) {
-        btn.click();
-        return true;
-      }
-      return false;
-    })
-    .catch(() => false);
-  return Boolean(viaFn);
-}
-
 async function pageCartLooksEmpty(page: Page): Promise<boolean> {
   const html = await page.content();
   if (/There are no items in your shopping cart/i.test(html)) return true;
@@ -247,11 +163,80 @@ async function pageCartLooksEmpty(page: Page): Promise<boolean> {
   return rows <= 1;
 }
 
+/**
+ * Post the product form the way the Add to Cart image button does.
+ * addToCart() only fires a soft-add AJAX call and cancels navigation; that
+ * response is a full product page, so the rebuild used to leave for the cart
+ * before the item existed. form.submit() with btnaddtocart.x/y and
+ * ReturnTo=ShoppingCart.php is the post this store actually adds from.
+ */
+async function submitProductForm(page: Page): Promise<{ ok: boolean; error?: string }> {
+  const navigated = page
+    .waitForURL(/ShoppingCart/i, { timeout: 25_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  let started = false;
+  try {
+    started = await page.evaluate(() => {
+      const form =
+        (document.getElementById("vCSS_mainform") as HTMLFormElement | null) ||
+        (document.forms.namedItem("MainForm") as HTMLFormElement | null);
+      if (!form) return false;
+      const ret = form.elements.namedItem("ReturnTo") as HTMLInputElement | null;
+      if (ret) ret.value = "ShoppingCart.php";
+      for (const [name, value] of [
+        ["btnaddtocart.x", "5"],
+        ["btnaddtocart.y", "5"],
+      ] as const) {
+        if (form.querySelector(`input[name="${name}"]`)) continue;
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      }
+      form.submit();
+      return true;
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // form.submit() navigates immediately and can destroy the evaluate context.
+    if (!/destroyed|navigation|closed/i.test(message)) {
+      return { ok: false, error: message };
+    }
+    started = true;
+  }
+
+  if (!started) return { ok: false, error: "Add to Cart form not found" };
+  await Promise.race([
+    navigated,
+    (async () => {
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        if (/shoppingcart/i.test(page.url())) return;
+        await delay(200);
+      }
+    })(),
+  ]);
+  if (!/shoppingcart/i.test(page.url())) {
+    return { ok: false, error: "Storefront did not open the cart after add" };
+  }
+  return { ok: true };
+}
+
 async function pageCartHasProduct(page: Page, productCode: string): Promise<boolean> {
-  if (await pageCartLooksEmpty(page)) return false;
   const needle = productCode.trim().toLowerCase();
   if (!needle) return false;
+  const tableText = (
+    await page.locator("#v65-cart-table").innerText().catch(() => "")
+  ).toLowerCase();
+  if (tableText.includes(needle)) return true;
   const html = (await page.content()).toLowerCase();
+  if (html.includes(`productcode=${needle}`) || html.includes(`productcode%3d${needle}`)) {
+    return true;
+  }
+  if (await pageCartLooksEmpty(page)) return false;
   return html.includes(needle);
 }
 
@@ -266,9 +251,9 @@ async function openProductDetailsPage(page: Page, productCode: string): Promise<
     }
     // Product page should expose qty or add-to-cart or option controls.
     const hasProductUi =
-      (await page.locator('input[name="Quantity"], input[name="quantity"], #Quantity').count()) > 0 ||
-      (await page.locator('input[name="btnAddToCart"], input[value*="Add to Cart" i], a:has-text("Add To Cart")').count()) >
+      (await page.locator('input[name="Quantity"], input[name="quantity"], input[name^="QTY."], #Quantity').count()) >
         0 ||
+      (await page.locator('input[name="btnaddtocart"], input[name="btnAddToCart"], #btn_addtocart').count()) > 0 ||
       (await page.locator("select option, input[type='radio'], input[type='checkbox']").count()) > 0;
     if (hasProductUi) {
       console.log("[rebuild-cart] product page", page.url());
@@ -280,7 +265,7 @@ async function openProductDetailsPage(page: Page, productCode: string): Promise<
 
 /**
  * Add one abandoned-cart line via ProductDetails:
- * select OptionID values → optional Update Price → Add To Cart.
+ * select OptionID values, set QTY.{ProductCode}, then Volusion soft-add (AJAX).
  * (Querystring OptionIDs= on ShoppingCart.php is unreliable on this store.)
  */
 export async function addAbandonedLineToStorefrontCart(
@@ -320,61 +305,39 @@ export async function addAbandonedLineToStorefrontCart(
           error: `None of the OptionIDs were found on the product page: ${optionIds.join(",")}`,
         };
       }
-      await clickUpdatePriceIfPresent(page);
-      // Re-select after Update Price postback (Volusion often reloads the form).
-      if (missing.length < optionIds.length) {
-        await selectOptionIdsOnProductPage(page, optionIds);
-      }
     }
 
-    await setQuantity(page, line.qty);
+    await setQuantity(page, line.qty, productCode);
     await delay(300);
 
-    const clicked = await clickAddToCart(page);
-    if (!clicked) {
-      return { ...base, error: "Add to Cart control not found" };
-    }
-
-    // Prefer waiting for cart navigation; Volusion often posts then redirects.
-    await Promise.race([
-      page.waitForURL(/ShoppingCart/i, { timeout: 20_000 }),
-      page.waitForLoadState("domcontentloaded"),
-    ]).catch(() => undefined);
-    await delay(1000);
-
     const cartUrl = `${STORE_BASE.replace(/\/$/, "")}/ShoppingCart.php`;
-    if (!/shoppingcart/i.test(page.url())) {
-      console.log("[rebuild-cart] post-add url still product page:", page.url());
-      await page.goto(cartUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      await delay(700);
-    }
-    console.log("[rebuild-cart] cart url after add:", page.url());
+    const confirmInCart = async (): Promise<boolean> => {
+      if (!/shoppingcart/i.test(page.url())) {
+        await page.goto(cartUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+        await delay(700);
+      }
+      console.log("[rebuild-cart] cart url after add:", page.url());
+      return pageCartHasProduct(page, productCode);
+    };
 
-    if (await pageCartHasProduct(page, productCode)) {
+    const submitted = await submitProductForm(page);
+    if (!submitted.ok) {
+      return { ...base, error: submitted.error ?? "Add to cart failed" };
+    }
+    if (await confirmInCart()) {
       return { ...base, ok: true };
     }
 
-    // One more attempt: re-select options and click Add again (Volusion postback can clear selects).
-    if (optionIds.length) {
-      const reopened = await openProductDetailsPage(page, productCode);
-      if (reopened) {
-        await selectOptionIdsOnProductPage(page, optionIds);
-        await clickUpdatePriceIfPresent(page);
-        await selectOptionIdsOnProductPage(page, optionIds);
-        await setQuantity(page, line.qty);
-        await clickAddToCart(page);
-        await Promise.race([
-          page.waitForURL(/ShoppingCart/i, { timeout: 20_000 }),
-          page.waitForLoadState("domcontentloaded"),
-        ]).catch(() => undefined);
-        await delay(1000);
-        if (!/shoppingcart/i.test(page.url())) {
-          await page.goto(cartUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
-          await delay(700);
-        }
-        if (await pageCartHasProduct(page, productCode)) {
-          return { ...base, ok: true };
-        }
+    const reopened = await openProductDetailsPage(page, productCode);
+    if (reopened) {
+      if (optionIds.length) await selectOptionIdsOnProductPage(page, optionIds);
+      await setQuantity(page, line.qty, productCode);
+      const retry = await submitProductForm(page);
+      if (!retry.ok) {
+        return { ...base, error: retry.error ?? "Add to cart failed" };
+      }
+      if (await confirmInCart()) {
+        return { ...base, ok: true };
       }
     }
 
@@ -438,7 +401,10 @@ export async function rebuildStorefrontCartFromAbandonedCartId(
     for (const line of items) {
       const result = await addAbandonedLineToStorefrontCart(page, line);
       if (result.ok) added.push(result);
-      else failed.push(result);
+      else {
+        console.error("[rebuild-cart] line failed", result);
+        failed.push(result);
+      }
     }
 
     let cartEmpty = true;
@@ -491,7 +457,11 @@ export async function rebuildStorefrontCartFromAbandonedCartId(
       usedSnapshot,
       newCartId,
       ...(failed.length && !added.length
-        ? { error: "Failed to add any products to the storefront cart" }
+        ? {
+            error: `Failed to add any products to the storefront cart (${failed
+              .map((row) => `${row.productCode}: ${row.error ?? "failed"}`)
+              .join("; ")})`,
+          }
         : revealError
           ? { error: `Cart rebuilt but visible window failed to open: ${revealError}` }
           : {}),
