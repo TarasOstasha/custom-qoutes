@@ -390,6 +390,20 @@ th {
   align-items: center;
 }
 
+.dog-mascot {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  background: transparent;
+  line-height: 0;
+}
+
+.dog-mascot > div {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
 .app-header-version-select {
   appearance: none;
   border: 1px solid #374151;

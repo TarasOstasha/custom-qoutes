@@ -6,6 +6,7 @@ import Swal from "sweetalert2";
 import { getApiBase } from "../../lib/apiBase";
 import { extractCartFromPage, type CartPayload } from "../../lib/extractCartFromPage";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
+import DogMascot from "../../components/DogMascot";
 import QuoteExportButtons from "../../components/QuoteExportButtons";
 import QuoteInternalAttachments from "../../components/QuoteInternalAttachments";
 import {
@@ -2017,7 +2018,10 @@ export default function QuoteBuilderPage() {
       <div className="card section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div>
-            <h1 className="title">Quote Builder</h1>
+            <div style={{ display: "flex", alignItems: "end", gap: 8 }}>
+              <h1 className="title">Quote Builder</h1>
+              <DogMascot />
+            </div>
             <p className="muted" style={{ margin: "6px 0 0" }}>
               Internal UI with mock data.
             </p>
