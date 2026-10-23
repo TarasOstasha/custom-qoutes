@@ -543,6 +543,7 @@ const createQuote = async (req: Request, res: Response) => {
         status: (toStringOrNull(body.status) ?? "draft"),
         version: String(body.version ?? "1"),
         customerName: toStringOrNull(pickBodyValue(body, "customer_name", "customerName")),
+        customerId: toStringOrNull(pickBodyValue(body, "customer_id", "customerId")),
         company: toStringOrNull(body.company),
         email: toStringOrNull(body.email),
         phone: toStringOrNull(body.phone),
@@ -658,6 +659,9 @@ router.put("/:id", async (req: Request, res: Response) => {
     if (body.version !== undefined) updates.version = String(body.version);
     if (pickBodyValue(body, "customer_name", "customerName") !== undefined) {
       updates.customerName = toStringOrNull(pickBodyValue(body, "customer_name", "customerName"));
+    }
+    if (pickBodyValue(body, "customer_id", "customerId") !== undefined) {
+      updates.customerId = toStringOrNull(pickBodyValue(body, "customer_id", "customerId"));
     }
     if (body.company !== undefined) updates.company = (body.company as string | null) ?? null;
     if (body.email !== undefined) updates.email = (body.email as string | null) ?? null;

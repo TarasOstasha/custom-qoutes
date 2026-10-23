@@ -199,6 +199,8 @@ type ApiQuote = {
   status: string;
   version: string | number;
   customerName: string | null;
+  customerId?: string | null;
+  customer_id?: string | null;
   company: string | null;
   email: string | null;
   phone: string | null;
@@ -1494,6 +1496,7 @@ export default function QuoteBuilderPage() {
       email: quote.customerEmail ?? null,
       phone: quote.customerPhone ?? null,
       address: quote.customerAddress ?? null,
+      customer_id: quote.customerId?.trim() || null,
       notes: quote.notes ?? null,
       internal_notes: quote.internalNotes ?? null,
       estimate_valid_days: normalizeEstimateValidDays(quote.estimateValidDays),
@@ -1783,6 +1786,7 @@ export default function QuoteBuilderPage() {
         customerEmail: data.email ?? null,
         customerPhone: data.phone ?? null,
         customerAddress: data.address ?? null,
+        customerId: data.customerId ?? data.customer_id ?? null,
         notes: data.notes ?? null,
         internalNotes: data.internalNotes ?? data.internal_notes ?? null,
         estimateValidDays: normalizeEstimateValidDays(
@@ -2231,6 +2235,21 @@ export default function QuoteBuilderPage() {
               whiteSpace: "pre-wrap",
               textAlign: "left",
             }}
+          />
+          <label htmlFor="customer-id" style={{ marginTop: 14 }}>
+            Customer ID
+          </label>
+          <input
+            id="customer-id"
+            value={quote.customerId ?? ""}
+            onChange={(e) =>
+              setQuote((prev) => ({
+                ...prev,
+                customerId: e.target.value || null,
+              }))
+            }
+            placeholder="Customer ID"
+            style={{ marginTop: 6 }}
           />
         </div>
 

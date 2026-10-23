@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { getApiBase } from "./apiBase";
-import { formatCustomerInfoBlock } from "./customerInfo";
+import { formatCustomerInfoDocument } from "./customerInfo";
 import { formatEstimateValidLabel, type Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -202,7 +202,7 @@ export async function exportQuoteToExcel(quote: Quote): Promise<void> {
 
   row += 1;
 
-  const customerBlock = formatCustomerInfoBlock(quote) || "—";
+  const customerBlock = formatCustomerInfoDocument(quote) || "—";
   const customerLines = customerBlock.split(/\r?\n/).filter((line) => line.trim());
   const customerRowCount = Math.max(4, customerLines.length);
   ws.mergeCells(`A${row}:B${row + customerRowCount - 1}`);

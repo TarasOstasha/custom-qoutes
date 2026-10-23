@@ -38,6 +38,24 @@ export function formatCustomerInfoBlock(quote: {
   return lines.join("\n");
 }
 
+/** Customer block plus Customer ID, for the estimate, PDF, and Excel. */
+export function formatCustomerInfoDocument(quote: {
+  customerName?: string | null;
+  customerCompany?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
+  customerId?: string | null;
+}): string {
+  const lines = formatCustomerInfoBlock(quote)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const customerId = quote.customerId?.trim();
+  if (customerId) lines.push(`Customer ID: ${customerId}`);
+  return lines.join("\n");
+}
+
 /** Map pasted customer text into quote fields (full block + first line for search). */
 export function customerInfoFromPaste(text: string): {
   customerAddress: string | null;

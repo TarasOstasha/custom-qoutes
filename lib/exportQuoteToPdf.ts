@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { getApiBase } from "./apiBase";
-import { formatCustomerInfoBlock } from "./customerInfo";
+import { formatCustomerInfoDocument } from "./customerInfo";
 import { formatEstimateValidLabel, type Quote } from "./mockQuote";
 import { normalizeProductImageUrl } from "./normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "./quoteDiscount";
@@ -326,7 +326,7 @@ export async function exportQuoteToPdf(quote: Quote): Promise<void> {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
   let yTo = toY + 18;
-  const customerLines = formatCustomerInfoBlock(quote)
+  const customerLines = formatCustomerInfoDocument(quote)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);

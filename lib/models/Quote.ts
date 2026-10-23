@@ -8,6 +8,7 @@ export class Quote extends Model<InferAttributes<Quote>, InferCreationAttributes
   declare status: CreationOptional<string>;
   declare version: CreationOptional<string>;
   declare customerName: string | null;
+  declare customerId: string | null;
   declare company: string | null;
   declare email: string | null;
   declare phone: string | null;
@@ -68,6 +69,11 @@ Quote.init(
       type: DataTypes.STRING,
       allowNull: true,
       field: "customer_name",
+    },
+    customerId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "customer_id",
     },
     company: {
       type: DataTypes.STRING,

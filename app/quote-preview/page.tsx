@@ -6,7 +6,7 @@ import QuoteExportButtons from "../../components/QuoteExportButtons";
 import { QuoteLineItemImageGallery } from "../../components/QuoteLineItemImageGallery";
 import { formatQuoteLineDescription } from "../../lib/formatQuoteLineDescription";
 import { createEmptyQuote, formatEstimateValidLabel, type Quote } from "../../lib/mockQuote";
-import { formatCustomerInfoBlock } from "../../lib/customerInfo";
+import { formatCustomerInfoDocument } from "../../lib/customerInfo";
 import { normalizeProductImageUrl } from "../../lib/normalizeProductImageUrl";
 import { formatQuoteDiscountRate, isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { recalcQuotePreservingTaxRate } from "../../lib/recalcQuote";
@@ -84,7 +84,7 @@ export default function QuotePreviewPage() {
 
 
           <div style={{ maxWidth: 260, justifySelf: "center", paddingTop: 36 }}>
-            <div style={{ whiteSpace: "pre-line" }}>{formatCustomerInfoBlock(quote) || "—"}</div>
+            <div style={{ whiteSpace: "pre-line" }}>{formatCustomerInfoDocument(quote) || "—"}</div>
           </div>
 
 
