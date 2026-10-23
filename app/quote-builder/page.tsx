@@ -1843,6 +1843,39 @@ export default function QuoteBuilderPage() {
     }
   };
 
+  const startNewQuote = () => {
+    if (!window.confirm("Start a new quote? This clears the current quote from this browser.")) return;
+    clearQuoteDraft();
+    setLastCartPayload(null);
+    setLoadedQuoteId(null);
+    setOriginalLoadedQuoteNumber(null);
+    setCalculatorTarget(null);
+    setEstimateValidDaysDraft(null);
+    setTaxPercentDraft(null);
+    setShippingDestinationDraft(null);
+    setTaxRowLabelDraft(null);
+    setTaxAmountDraft(null);
+    setShippingAmountDraft(null);
+    setAbandonedCartQuery("");
+    setAbandonedCartSearchResults([]);
+    setAbandonedCartMessage(null);
+    setAbandonedCartError(null);
+    setLineItemOptions({});
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+    setSaveQuoteSuccess(null);
+    setSaveQuoteError(null);
+    setQuoteNumberNotice(null);
+    setIdentifiedEmail(null);
+    setLiveSessionUrl(null);
+    setClearCartMessage(null);
+    setClearCartError(null);
+    setCustomImageTargetId(null);
+    setQuote(createEmptyQuote());
+    void assignNextQuoteNumber({ force: true });
+  };
+
   const calculatorItem = calculatorTarget
     ? quote.items.find((item) => item.id === calculatorTarget.itemId)
     : undefined;
@@ -1972,26 +2005,8 @@ export default function QuoteBuilderPage() {
             >
               Reload app
             </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                if (!window.confirm("Clear all quote data from this browser?")) return;
-                clearQuoteDraft();
-                setLastCartPayload(null);
-                setLoadedQuoteId(null);
-                setOriginalLoadedQuoteNumber(null);
-                setCalculatorTarget(null);
-                setEstimateValidDaysDraft(null);
-                setAbandonedCartQuery("");
-                setAbandonedCartSearchResults([]);
-                setAbandonedCartMessage(null);
-                setAbandonedCartError(null);
-                setQuote(createEmptyQuote());
-                void assignNextQuoteNumber({ force: true });
-              }}
-            >
-              Clear data
+            <button type="button" className="btn" onClick={startNewQuote}>
+              New Quote
             </button>
             <Link className="btn primary" href="/quote-preview">
               Preview Quote
