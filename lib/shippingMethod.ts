@@ -4,6 +4,9 @@ import { formatShippingDestination } from "./shippingDestination";
 /** Manual builder option — always rendered last in the shipping dropdown. */
 export const CUSTOM_SHIPPING_METHOD_VALUE = "6";
 
+/** Free-text method stored in `shippingMethod`, e.g. `custom:Will Call`. */
+const CUSTOM_SHIPPING_TEXT_PREFIX = "custom:";
+
 /** Static builder options (cart-imported methods are inserted before Custom). */
 export const SHIPPING_METHOD_OPTIONS = [{ value: CUSTOM_SHIPPING_METHOD_VALUE, label: "Custom" }] as const;
 
@@ -63,11 +66,38 @@ export function buildShippingMethodSelectOptions(
   return [...leadingStatic, ...cart, ...trailingCustom];
 }
 
+export function isCustomShippingMethod(value: string | null | undefined): boolean {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === CUSTOM_SHIPPING_METHOD_VALUE || trimmed.startsWith(CUSTOM_SHIPPING_TEXT_PREFIX);
+}
+
+/** Text the user typed for the Custom shipping method. Keeps in-progress spaces. */
+export function customShippingMethodText(value: string | null | undefined): string {
+  const raw = value ?? "";
+  if (!raw.startsWith(CUSTOM_SHIPPING_TEXT_PREFIX)) return "";
+  return raw.slice(CUSTOM_SHIPPING_TEXT_PREFIX.length);
+}
+
+/** Dropdown value. Custom free text still selects the Custom option. */
+export function shippingMethodSelectValue(value: string | null | undefined): string {
+  if (isCustomShippingMethod(value)) return CUSTOM_SHIPPING_METHOD_VALUE;
+  return value?.trim() || DEFAULT_SHIPPING_METHOD;
+}
+
+/** Persist typed custom text without dropping in-progress spaces. */
+export function withCustomShippingText(text: string): string {
+  if (!text) return CUSTOM_SHIPPING_METHOD_VALUE;
+  return `${CUSTOM_SHIPPING_TEXT_PREFIX}${text}`;
+}
+
 export function formatShippingMethodLabel(
   value: string | null | undefined,
   cartOptions?: CartShippingOption[] | null,
 ): string | null {
   if (!value || value === DEFAULT_SHIPPING_METHOD) return null;
+  if (isCustomShippingMethod(value)) {
+    return customShippingMethodText(value).trim() || null;
+  }
   const staticLabel = SHIPPING_METHOD_OPTIONS.find((option) => option.value === value)?.label;
   if (staticLabel) return staticLabel;
   return cartOptions?.find((option) => option.value === value)?.label ?? null;
@@ -118,6 +148,9 @@ export function formatShippingMethodDisplayLabel(
   value: string | null | undefined,
   cartOptions?: CartShippingOption[] | null,
 ): string | null {
+  if (isCustomShippingMethod(value)) {
+    return customShippingMethodText(value).trim() || null;
+  }
   const raw = formatShippingMethodLabel(value, cartOptions);
   if (!raw) return null;
   const compact = formatShippingOptionDisplayLabel(raw);
@@ -255,6 +288,9 @@ export function resolveEffectiveShippingMethod(
   quote: ShippingMethodQuote,
   fallback: string = DEFAULT_SHIPPING_METHOD,
 ): string {
+  if (isCustomShippingMethod(quote.shippingMethod)) {
+    return quote.shippingMethod ?? fallback;
+  }
   const method = quote.shippingMethod?.trim();
   if (method && method !== DEFAULT_SHIPPING_METHOD) {
     const option = findCartShippingOption(quote.shippingOptions, method);

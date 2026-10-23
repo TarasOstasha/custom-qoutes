@@ -24,16 +24,16 @@ import { customerInfoFromPaste, formatCustomerInfoBlock } from "../../lib/custom
 import { isQuoteDiscountLine } from "../../lib/quoteDiscount";
 import { normalizeExtraImageUrls } from "../../lib/quoteItemImages";
 import { recalcQuote, recalcQuotePreservingTaxRate, round2 } from "../../lib/recalcQuote";
-import {
-  formatShippingDestination,
-  parseShippingDestinationText,
-} from "../../lib/shippingDestination";
+import { formatShippingDestination } from "../../lib/shippingDestination";
 import {
   buildShippingMethodSelectOptions,
   formatShippingOptionDisplayLabel,
   cartPayloadHasShippingChoice,
+  CUSTOM_SHIPPING_METHOD_VALUE,
+  customShippingMethodText,
   DEFAULT_SHIPPING_METHOD,
   findCartShippingOption,
+  isCustomShippingMethod,
   mergeCartShippingOptions,
   parseShippingMethodFromDb,
   parseShippingOptionsFromDb,
@@ -42,6 +42,8 @@ import {
   resolveShippingMethodFromShippingOptions,
   reconcileShippingSelectionWithTotal,
   serializeShippingMethodForDb,
+  shippingMethodSelectValue,
+  withCustomShippingText,
 } from "../../lib/shippingMethod";
 import {
   formatTaxRatePercentInput,
@@ -453,6 +455,12 @@ export default function QuoteBuilderPage() {
     () => resolveEffectiveShippingMethod(quote),
     [quote.shippingMethod, quote.shippingOptions, quote.shippingTotal],
   );
+  const selectedShippingMethodValue = shippingMethodSelectValue(effectiveShippingMethod);
+  const customShippingSelected =
+    selectedShippingMethodValue === CUSTOM_SHIPPING_METHOD_VALUE ||
+    (!shippingMethodSelectOptions.some((option) => option.value === selectedShippingMethodValue) &&
+      shippingMethodSelectOptions.length === 1 &&
+      shippingMethodSelectOptions[0]?.value === CUSTOM_SHIPPING_METHOD_VALUE);
 
   useEffect(() => {
     setQuote((prev) => {
@@ -555,15 +563,10 @@ export default function QuoteBuilderPage() {
 
   const applyShippingDestination = (raw: string) => {
     const trimmed = raw.trim();
-    if (!trimmed) {
-      setQuote((prev) => ({ ...prev, shippingState: null, shippingZip: null }));
-      return;
-    }
-    const { state, zip } = parseShippingDestinationText(trimmed);
     setQuote((prev) => ({
       ...prev,
-      shippingState: state || null,
-      shippingZip: zip || null,
+      shippingState: trimmed || null,
+      shippingZip: null,
     }));
   };
 
@@ -3029,16 +3032,24 @@ export default function QuoteBuilderPage() {
               className="totals-row"
               style={{
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                flexDirection: "column",
+                alignItems: "stretch",
                 gap: 8,
-                flexWrap: "wrap",
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
               <span style={{ flexShrink: 0 }}>Shipping</span>
               <select
                 aria-label="Shipping method"
-                value={effectiveShippingMethod}
+                value={selectedShippingMethodValue}
                 onChange={(e) => {
                   const nextValue = e.target.value;
                   setQuote((prev) => {
@@ -3048,9 +3059,15 @@ export default function QuoteBuilderPage() {
                       : cartOption?.price != null && cartOption.price > 0
                         ? cartOption.price
                         : prev.shippingTotal;
+                    const shippingMethod =
+                      nextValue === CUSTOM_SHIPPING_METHOD_VALUE
+                        ? isCustomShippingMethod(prev.shippingMethod)
+                          ? (prev.shippingMethod ?? CUSTOM_SHIPPING_METHOD_VALUE)
+                          : CUSTOM_SHIPPING_METHOD_VALUE
+                        : nextValue;
                     return {
                       ...prev,
-                      shippingMethod: nextValue,
+                      shippingMethod,
                       ...recalcQuotePreservingTaxRate(prev, prev.items, {
                         shippingTotal: nextShippingTotal,
                         taxTotal: prev.taxTotal,
@@ -3111,6 +3128,22 @@ export default function QuoteBuilderPage() {
                 aria-label="Shipping amount"
                 style={{ maxWidth: 120, textAlign: "right", flexShrink: 0 }}
               />
+              </div>
+              {customShippingSelected ? (
+                <input
+                  type="text"
+                  aria-label="Custom shipping method"
+                  placeholder="Custom shipping method"
+                  value={customShippingMethodText(quote.shippingMethod)}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    setQuote((prev) => ({
+                      ...prev,
+                      shippingMethod: withCustomShippingText(text),
+                    }));
+                  }}
+                />
+              ) : null}
             </div>
             <div className="totals-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <input
